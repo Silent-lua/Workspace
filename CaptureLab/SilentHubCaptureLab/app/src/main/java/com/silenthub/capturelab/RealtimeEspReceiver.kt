@@ -16,7 +16,7 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.math.min
 
-/** Supabase Realtime v1 JSON protocol receiver for the app's one-time pairing token. */
+/** Supabase Realtime protocol 1.0.0 receiver. Join acknowledgement is not app pairing. */
 internal class SupabaseRealtimeEspReceiver(
     private val pairingToken: String,
     private val onFrame: (ExternalEspFrame) -> Unit,
@@ -27,33 +27,35 @@ internal class SupabaseRealtimeEspReceiver(
         private const val PUBLISHABLE_KEY = "sb_publishable_OVQH-qo6gtnOWPkAvFCiCA_VSRUfruG"
         private const val HEARTBEAT_MS = 20_000L
         private const val MAX_PLAYERS = 5
+        private const val JOIN_REF = "1"
     }
 
     private val handler = Handler(Looper.getMainLooper())
     private val client = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
+        .pingInterval(25, TimeUnit.SECONDS)
         .build()
     private val topic = "silenthub-esp-" + sha256(pairingToken).take(32)
 
     @Volatile private var socket: WebSocket? = null
     @Volatile private var closed = false
+    @Volatile private var joined = false
+    private var hasConnectedBefore = false
     private var refCounter = 2
     private var reconnectDelayMs = 1_000L
+    private var lastSequence = -1L
 
     private val heartbeat = object : Runnable {
         override fun run() {
-            if (closed) return
-            socket?.send(JSONObject()
-                .put("topic", "phoenix")
-                .put("event", "heartbeat")
-                .put("payload", JSONObject())
-                .put("ref", nextRef())
-                .toString())
-            handler.postDelayed(this, HEARTBEAT_MS)
+            if (closed || socket == null) return
+            val sent = socket?.send(
+                JSONObject().put("topic", "phoenix").put("event", "heartbeat")
+                    .put("payload", JSONObject()).put("ref", nextRef()).toString()
+            ) ?: false
+            if (sent) handler.postDelayed(this, HEARTBEAT_MS) else scheduleReconnect()
         }
     }
-
     private val reconnect = Runnable { if (!closed) connect() }
 
     fun start() {
@@ -68,7 +70,9 @@ internal class SupabaseRealtimeEspReceiver(
         if (closed) return
         handler.removeCallbacks(reconnect)
         handler.removeCallbacks(heartbeat)
-        onStatus("connecting")
+        joined = false
+        onStatus(if (hasConnectedBefore) "reconnecting" else "connecting")
+
         val key = URLEncoder.encode(PUBLISHABLE_KEY, "UTF-8")
         val url = "wss://$PROJECT_REF.supabase.co/realtime/v1/websocket?apikey=$key&vsn=1.0.0"
         socket = client.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
@@ -87,9 +91,9 @@ internal class SupabaseRealtimeEspReceiver(
                     .put("topic", "realtime:$topic")
                     .put("event", "phx_join")
                     .put("payload", JSONObject().put("config", config))
-                    .put("ref", "1")
-                    .put("join_ref", "1")
-                webSocket.send(join.toString())
+                    .put("ref", JOIN_REF)
+                    .put("join_ref", JOIN_REF)
+                if (!webSocket.send(join.toString())) scheduleReconnect()
                 handler.removeCallbacks(heartbeat)
                 handler.postDelayed(heartbeat, HEARTBEAT_MS)
             }
@@ -98,43 +102,58 @@ internal class SupabaseRealtimeEspReceiver(
                 if (closed) return
                 try {
                     val packet = JSONObject(text)
-                    when (packet.optString("event")) {
-                        "phx_reply" -> {
-                            val payload = packet.optJSONObject("payload")
-                            if (payload?.optString("status") == "ok") {
-                                reconnectDelayMs = 1_000L
-                                onStatus("connected")
-                            } else if (payload?.optString("status") == "error") {
-                                onStatus("channel_rejected")
-                                scheduleReconnect()
-                            }
-                        }
-                        "broadcast" -> {
-                            val payload = packet.optJSONObject("payload") ?: return
-                            if (payload.optString("type") != "broadcast" || payload.optString("event") != "frame") return
-                            val frame = payload.optJSONObject("payload") ?: return
-                            onFrame(parseFrame(frame))
-                        }
-                        "phx_error", "phx_close" -> {
-                            onStatus("realtime_channel_closed")
+                    val event = packet.optString("event")
+                    val packetTopic = packet.optString("topic")
+                    if (event == "phx_reply" &&
+                        packetTopic == "realtime:$topic" &&
+                        packet.optString("ref") == JOIN_REF) {
+                        val status = packet.optJSONObject("payload")?.optString("status")
+                        if (status == "ok") {
+                            joined = true
+                            hasConnectedBefore = true
+                            reconnectDelayMs = 1_000L
+                            onStatus("connected")
+                        } else {
+                            joined = false
+                            onStatus("channel_rejected")
                             scheduleReconnect()
                         }
+                        return
+                    }
+                    if (event == "phx_error" || event == "phx_close") {
+                        joined = false
+                        onStatus("reconnecting")
+                        scheduleReconnect()
+                        return
+                    }
+                    if (event == "broadcast" && packetTopic == "realtime:$topic" && joined) {
+                        val broadcast = packet.optJSONObject("payload") ?: return
+                        if (broadcast.optString("type") != "broadcast" ||
+                            broadcast.optString("event") != "frame") return
+                        val frameJson = broadcast.optJSONObject("payload") ?: return
+                        val sequence = frameJson.optLong("sequence", -1L)
+                        if (sequence < 0 || sequence == lastSequence) return
+                        val frame = parseFrame(frameJson)
+                        lastSequence = sequence
+                        onFrame(frame)
                     }
                 } catch (_: Exception) {
-                    // Ignore malformed packets; the next complete frame will refresh the overlay.
+                    // Malformed packets never change connection state.
                 }
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 if (!closed) {
-                    onStatus("realtime_disconnected")
+                    joined = false
+                    onStatus("reconnecting")
                     scheduleReconnect()
                 }
             }
 
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            override fun onFailure(webSocket: WebSocket, error: Throwable, response: Response?) {
                 if (!closed) {
-                    onStatus("network_error")
+                    joined = false
+                    onStatus(if (response?.code == 401 || response?.code == 403) "channel_rejected" else "reconnecting")
                     scheduleReconnect()
                 }
             }
@@ -157,11 +176,15 @@ internal class SupabaseRealtimeEspReceiver(
                 val t = unit(it.optDouble("t", Double.NaN))
                 val r = unit(it.optDouble("r", Double.NaN))
                 val b = unit(it.optDouble("b", Double.NaN))
-                if (l.isFinite() && t.isFinite() && r.isFinite() && b.isFinite() && r > l && b > t) EspRect(l, t, r, b) else null
+                if (l.isFinite() && t.isFinite() && r.isFinite() && b.isFinite() && r > l && b > t) {
+                    EspRect(l, t, r, b)
+                } else null
             }
             val tracer = source.optJSONObject("tracer")?.let {
-                val v = listOf("x1", "y1", "x2", "y2").map { k -> unit(it.optDouble(k, Double.NaN)) }
-                if (v.all { it.isFinite() }) EspTracer(v[0], v[1], v[2], v[3]) else null
+                val values = listOf("x1", "y1", "x2", "y2").map { key ->
+                    unit(it.optDouble(key, Double.NaN))
+                }
+                if (values.all { it.isFinite() }) EspTracer(values[0], values[1], values[2], values[3]) else null
             }
             val arrow = source.optJSONObject("arrow")?.let {
                 val x = unit(it.optDouble("x", Double.NaN))
@@ -169,11 +192,16 @@ internal class SupabaseRealtimeEspReceiver(
                 val angle = it.optDouble("angle", Double.NaN).toFloat()
                 if (x.isFinite() && y.isFinite() && angle.isFinite()) EspArrow(x, y, angle) else null
             }
-            players.add(EspPlayer(
-                name = source.optString("name", "Player").take(32),
-                distance = source.optInt("distance", 0).coerceIn(0, 9999),
-                anchor = anchor, box = box, tracer = tracer, arrow = arrow
-            ))
+            players.add(
+                EspPlayer(
+                    name = source.optString("name", "Player").take(32),
+                    distance = source.optInt("distance", 0).coerceIn(0, 9999),
+                    anchor = anchor,
+                    box = box,
+                    tracer = tracer,
+                    arrow = arrow
+                )
+            )
         }
         return ExternalEspFrame(
             enabled = json.optBoolean("enabled", false),
@@ -190,9 +218,10 @@ internal class SupabaseRealtimeEspReceiver(
     private fun unit(value: Double): Float =
         if (value.isFinite()) value.toFloat().coerceIn(0f, 1f) else Float.NaN
 
-    private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray(Charsets.UTF_8))
-        .joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+    private fun sha256(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
 
     private fun nextRef(): String {
         val result = refCounter.toString()
@@ -204,13 +233,16 @@ internal class SupabaseRealtimeEspReceiver(
         if (closed) return
         handler.removeCallbacks(reconnect)
         handler.removeCallbacks(heartbeat)
+        socket?.cancel()
+        socket = null
         handler.postDelayed(reconnect, reconnectDelayMs)
-        reconnectDelayMs = min(15_000L, reconnectDelayMs * 2L)
+        reconnectDelayMs = min(30_000L, reconnectDelayMs * 2L)
     }
 
     override fun close() {
         if (closed) return
         closed = true
+        joined = false
         handler.removeCallbacks(reconnect)
         handler.removeCallbacks(heartbeat)
         socket?.close(1000, "service stopped")

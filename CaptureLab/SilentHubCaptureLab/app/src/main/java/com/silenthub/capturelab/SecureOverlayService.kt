@@ -8,17 +8,30 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
-import android.graphics.PixelFormat
 
 class SecureOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var overlayView: LiveEspOverlayView? = null
     private var realtimeReceiver: SupabaseRealtimeEspReceiver? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var lastFrameElapsed = 0L
+
+    private val staleFrameRunnable = Runnable {
+        if (SystemClock.elapsedRealtime() - lastFrameElapsed >= FRAME_STALE_MS &&
+            getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString(KEY_CONNECTION_STATE, "") == ConnectionState.PAIRED.name) {
+            setConnectionState(ConnectionState.CONNECTED_WAITING, "waiting_for_delta_frame")
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -28,23 +41,43 @@ class SecureOverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putBoolean(KEY_USER_STOPPED, true)
+                .putBoolean(KEY_AUTO_START, false)
+                .apply()
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        if (intent == null && (!prefs.getBoolean(KEY_AUTO_START, false) ||
+                prefs.getBoolean(KEY_USER_STOPPED, false))) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (prefs.getBoolean(KEY_USER_STOPPED, false)) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (prefs.getBoolean(KEY_UPDATE_MANDATORY, false)) {
+            setConnectionState(ConnectionState.CONNECTION_FAILED, "mandatory_update_required")
             stopSelf()
             return START_NOT_STICKY
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            setState(false, false, "overlay_permission_missing")
+            setConnectionState(ConnectionState.CONNECTION_FAILED, "overlay_permission_missing")
             stopSelf()
             return START_NOT_STICKY
         }
+
+        prefs.edit().putBoolean(KEY_AUTO_START, true).apply()
         startAsForegroundService()
         if (overlayView == null && !showSecureOverlay()) {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (realtimeReceiver == null && !startRealtimeReceiver()) {
-            setState(true, false, "pairing_token_missing")
-        }
-        return START_NOT_STICKY
+        if (realtimeReceiver == null) startRealtimeReceiver()
+        return START_STICKY
     }
 
     private fun showSecureOverlay(): Boolean {
@@ -70,34 +103,61 @@ class SecureOverlayService : Service() {
         return try {
             windowManager?.addView(view, params)
             overlayView = view
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RUNNING, true).apply()
             true
         } catch (_: SecurityException) {
-            setState(false, false, "overlay_security_exception")
+            setConnectionState(ConnectionState.CONNECTION_FAILED, "overlay_security_exception")
             false
         } catch (_: WindowManager.BadTokenException) {
-            setState(false, false, "overlay_bad_token")
+            setConnectionState(ConnectionState.CONNECTION_FAILED, "overlay_bad_token")
             false
         }
     }
 
-    private fun startRealtimeReceiver(): Boolean {
-        val token = getSharedPreferences(PREFS, MODE_PRIVATE)
-            .getString(KEY_PAIRING_TOKEN, "")?.trim().orEmpty()
-        if (!token.matches(Regex("^[A-Za-z0-9_-]{43}$"))) return false
-        return try {
-            val receiver = SupabaseRealtimeEspReceiver(
-                pairingToken = token,
-                onFrame = { frame -> overlayView?.accept(frame) },
-                onStatus = { status -> setState(true, status == "connected", status) }
-            )
-            realtimeReceiver = receiver
-            receiver.start()
-            true
+    private fun startRealtimeReceiver() {
+        val token = try {
+            PairingTokenStore(this).getOrCreate()
         } catch (_: Exception) {
-            realtimeReceiver?.close()
-            realtimeReceiver = null
-            false
+            setConnectionState(ConnectionState.CONNECTION_FAILED, "pairing_keystore_unavailable")
+            return
         }
+        setConnectionState(ConnectionState.CONNECTING, "opening_realtime_channel")
+        realtimeReceiver = SupabaseRealtimeEspReceiver(
+            pairingToken = token,
+            onFrame = { frame ->
+                lastFrameElapsed = SystemClock.elapsedRealtime()
+                mainHandler.removeCallbacks(staleFrameRunnable)
+                mainHandler.postDelayed(staleFrameRunnable, FRAME_STALE_MS)
+                overlayView?.accept(frame)
+                if (getSharedPreferences(PREFS, MODE_PRIVATE)
+                        .getString(KEY_CONNECTION_STATE, "") != ConnectionState.PAIRED.name) {
+                    setConnectionState(ConnectionState.PAIRED, "first_valid_frame_received")
+                }
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putLong(KEY_LAST_FRAME, System.currentTimeMillis())
+                    .putInt(KEY_LAST_PLAYER_COUNT, frame.players.size)
+                    .apply()
+            },
+            onStatus = { status ->
+                when (status) {
+                    "connecting" -> setConnectionState(ConnectionState.CONNECTING, status)
+                    "connected" -> setConnectionState(ConnectionState.CONNECTED_WAITING, "realtime_join_accepted")
+                    "reconnecting" -> setConnectionState(ConnectionState.RECONNECTING, status)
+                    "channel_rejected", "pairing_token_invalid" ->
+                        setConnectionState(ConnectionState.CONNECTION_FAILED, status)
+                    "network_error" -> setConnectionState(ConnectionState.RECONNECTING, status)
+                    "stopped" -> Unit
+                }
+            }
+        ).also { it.start() }
+    }
+
+    private fun setConnectionState(state: ConnectionState, detail: String) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putString(KEY_CONNECTION_STATE, state.name)
+            .putString(KEY_DETAIL, detail)
+            .putBoolean(KEY_BRIDGE, state == ConnectionState.CONNECTED_WAITING || state == ConnectionState.PAIRED)
+            .apply()
     }
 
     private fun startAsForegroundService() {
@@ -131,7 +191,7 @@ class SecureOverlayService : Service() {
         }
         return builder
             .setContentTitle("SilentHub External ESP")
-            .setContentText("Vercel relay + Supabase Realtime")
+            .setContentText("Vercel relay · Supabase Realtime")
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setContentIntent(openPending)
             .setOngoing(true)
@@ -143,27 +203,25 @@ class SecureOverlayService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID, "SilentHub External ESP", NotificationManager.IMPORTANCE_LOW
-            ).apply { description = "Estado del overlay ESP externo protegido" }
+            ).apply { description = "Estado del overlay externo protegido" }
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
-    private fun setState(overlay: Boolean, bridge: Boolean, detail: String) {
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-            .putBoolean(KEY_RUNNING, overlay)
-            .putBoolean(KEY_BRIDGE, bridge)
-            .putString(KEY_DETAIL, detail)
-            .apply()
-    }
-
     override fun onDestroy() {
+        mainHandler.removeCallbacks(staleFrameRunnable)
         realtimeReceiver?.close()
         realtimeReceiver = null
         overlayView?.let { view ->
             try { windowManager?.removeView(view) } catch (_: IllegalArgumentException) { }
         }
         overlayView = null
-        setState(false, false, "stopped")
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putBoolean(KEY_RUNNING, false)
+            .putBoolean(KEY_BRIDGE, false)
+            .putString(KEY_CONNECTION_STATE, ConnectionState.DISCONNECTED.name)
+            .putString(KEY_DETAIL, "service_stopped")
+            .apply()
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
@@ -175,9 +233,19 @@ class SecureOverlayService : Service() {
         const val KEY_RUNNING = "overlay_running"
         const val KEY_BRIDGE = "bridge_running"
         const val KEY_DETAIL = "state_detail"
-        const val KEY_PAIRING_TOKEN = "pairing_token"
-                private const val CHANNEL_ID = "silent_hub_external_esp_v4"
-        private const val NOTIFICATION_ID = 4111
+        const val KEY_AUTO_START = "auto_start_enabled"
+        const val KEY_USER_STOPPED = "user_stopped"
+        const val KEY_CONNECTION_STATE = "connection_state"
+        const val KEY_LAST_FRAME = "last_frame_at"
+        const val KEY_LAST_PLAYER_COUNT = "last_player_count"
+        const val KEY_UPDATE_MANDATORY = "mandatory_update_pending"
+        const val KEY_PENDING_UPDATE_VERSION = "pending_update_version"
+        const val KEY_PENDING_UPDATE_FILE = "pending_update_file"
+        const val KEY_INSTALL_STATUS = "install_status"
+        const val KEY_INSTALL_ERROR = "install_error"
+        private const val CHANNEL_ID = "silent_hub_external_esp_v5"
+        private const val NOTIFICATION_ID = 4112
         private const val ACTION_STOP = "com.silenthub.capturelab.STOP_EXTERNAL_ESP"
+        private const val FRAME_STALE_MS = 2_500L
     }
 }

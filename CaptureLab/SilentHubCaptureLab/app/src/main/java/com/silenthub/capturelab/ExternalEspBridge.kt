@@ -279,18 +279,26 @@ internal class LocalEspBridgeServer(
     }
 }
 
-/** Screen-protected Canvas renderer. All elements use a single fixed red. */
+/** Event-driven renderer. It invalidates on frames and once when a frame expires. */
 internal class LiveEspOverlayView(context: Context) : View(context) {
     private val density = resources.displayMetrics.density
-    private val handler = Handler(Looper.getMainLooper())
+    private val expiryHandler = Handler(Looper.getMainLooper())
     @Volatile private var currentFrame: ExternalEspFrame? = null
+    private var expiryTask: Runnable? = null
+    private val labelRect = RectF()
+    private val arrowPath = Path().apply {
+        moveTo(0f, -1f)
+        lineTo(-0.72f, 0.75f)
+        lineTo(0f, 0.35f)
+        lineTo(0.72f, 0.75f)
+        close()
+    }
 
     private val boxGlow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.RED
         style = Paint.Style.STROKE
-        strokeWidth = 5f * density
-        alpha = 75
-        setShadowLayer(7f * density, 0f, 0f, Color.RED)
+        strokeWidth = 4.5f * density
+        alpha = 65
     }
     private val boxLine = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.RED
@@ -317,102 +325,106 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
     }
     private val labelPadding = 5f * density
 
-    private val freshnessTick = object : Runnable {
-        override fun run() {
-            invalidate()
-            handler.postDelayed(this, 180L)
-        }
-    }
-
     init {
-        setLayerType(View.LAYER_TYPE_SOFTWARE, null)
         isClickable = false
         isFocusable = false
-        handler.post(freshnessTick)
     }
 
     fun accept(frame: ExternalEspFrame) {
         currentFrame = frame
-        postInvalidate()
+        expiryTask?.let(expiryHandler::removeCallbacks)
+        invalidate()
+        val task = Runnable {
+            if (currentFrame === frame) {
+                val remaining = FRAME_TTL_MS - (SystemClock.elapsedRealtime() - frame.receivedAt)
+                if (remaining > 0L) {
+                    expiryHandler.postDelayed(this, remaining)
+                } else {
+                    currentFrame = null
+                    invalidate()
+                }
+            }
+        }
+        expiryTask = task
+        expiryHandler.postDelayed(task, FRAME_TTL_MS)
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val frame = currentFrame ?: return
-        if (!frame.enabled || SystemClock.elapsedRealtime() - frame.receivedAt > 850L) return
+        if (!frame.enabled || SystemClock.elapsedRealtime() - frame.receivedAt > FRAME_TTL_MS) return
         if (width <= 0 || height <= 0) return
-        val w = width.toFloat()
-        val h = height.toFloat()
+        val screenWidth = width.toFloat()
+        val screenHeight = height.toFloat()
 
         for (player in frame.players) {
             val box = player.box
             if (frame.showLines) {
                 player.tracer?.let { line ->
-                    canvas.drawLine(line.x1 * w, line.y1 * h, line.x2 * w, line.y2 * h, tracerLine)
+                    canvas.drawLine(
+                        line.x1 * screenWidth, line.y1 * screenHeight,
+                        line.x2 * screenWidth, line.y2 * screenHeight, tracerLine
+                    )
                 }
             }
             if (frame.glow && box != null) {
-                val rect = RectF(box.left * w, box.top * h, box.right * w, box.bottom * h)
-                canvas.drawRect(rect, boxGlow)
-                canvas.drawRect(rect, boxLine)
+                val left = box.left * screenWidth
+                val top = box.top * screenHeight
+                val right = box.right * screenWidth
+                val bottom = box.bottom * screenHeight
+                canvas.drawRect(left, top, right, bottom, boxGlow)
+                canvas.drawRect(left, top, right, bottom, boxLine)
             }
             if (frame.showName || frame.showDistance) {
-                val labelLines = ArrayList<String>(2)
-                if (frame.showName && player.name.isNotBlank()) labelLines.add(player.name)
-                if (frame.showDistance) labelLines.add(player.distance.toString() + "m")
-                if (labelLines.isNotEmpty()) {
-                    val anchorPoint = player.anchor
-                    val anchorX = box?.let { (it.left + it.right) * 0.5f * w }
-                        ?: anchorPoint?.x?.times(w) ?: Float.NaN
-                    val anchorY = box?.let { it.top * h }
-                        ?: anchorPoint?.y?.times(h) ?: Float.NaN
-                    if (anchorX.isFinite() && anchorY.isFinite()) {
-                        drawLabel(canvas, labelLines, anchorX, anchorY)
+                val anchor = player.anchor
+                val anchorX = box?.let { (it.left + it.right) * 0.5f * screenWidth }
+                    ?: anchor?.x?.times(screenWidth) ?: Float.NaN
+                val anchorY = box?.let { it.top * screenHeight }
+                    ?: anchor?.y?.times(screenHeight) ?: Float.NaN
+                if (anchorX.isFinite() && anchorY.isFinite()) {
+                    val value = when {
+                        frame.showName && frame.showDistance -> player.name + " · " + player.distance + "m"
+                        frame.showName -> player.name
+                        else -> player.distance.toString() + "m"
                     }
+                    drawLabel(canvas, value, anchorX, anchorY)
                 }
             }
             if (frame.showArrows) {
-                player.arrow?.let { arrow -> drawArrow(canvas, arrow, w, h) }
+                player.arrow?.let { drawArrow(canvas, it, screenWidth, screenHeight) }
             }
         }
     }
 
-    private fun drawLabel(canvas: Canvas, lines: List<String>, anchorX: Float, anchorY: Float) {
-        val lineHeight = 13f * density
-        val widest = lines.maxOfOrNull { labelText.measureText(it) } ?: return
-        val left = (anchorX - widest * 0.5f - labelPadding).coerceIn(2f, max(2f, width - widest - 2f * labelPadding))
-        val top = (anchorY - (lines.size * lineHeight) - 7f * density).coerceAtLeast(2f)
-        val right = min(width - 2f, left + widest + 2f * labelPadding)
-        val bottom = top + lines.size * lineHeight + 2f * density
-        canvas.drawRoundRect(RectF(left, top, right, bottom), 4f * density, 4f * density, labelBackground)
-        var baseline = top + lineHeight
-        for (line in lines) {
-            canvas.drawText(line, left + labelPadding, baseline, labelText)
-            baseline += lineHeight
-        }
+    private fun drawLabel(canvas: Canvas, value: String, anchorX: Float, anchorY: Float) {
+        val textWidth = labelText.measureText(value)
+        val left = (anchorX - textWidth * 0.5f - labelPadding)
+            .coerceIn(2f, max(2f, width - textWidth - labelPadding * 2f))
+        val top = (anchorY - 22f * density).coerceAtLeast(2f)
+        val right = min(width - 2f, left + textWidth + labelPadding * 2f)
+        labelRect.set(left, top, right, top + 20f * density)
+        canvas.drawRoundRect(labelRect, 4f * density, 4f * density, labelBackground)
+        canvas.drawText(value, left + labelPadding, top + 14f * density, labelText)
     }
 
     private fun drawArrow(canvas: Canvas, arrow: EspArrow, screenWidth: Float, screenHeight: Float) {
-        val centerX = arrow.x * screenWidth
-        val centerY = arrow.y * screenHeight
         val size = 9f * density
-        val path = Path().apply {
-            moveTo(0f, -size)
-            lineTo(-size * 0.72f, size * 0.75f)
-            lineTo(0f, size * 0.35f)
-            lineTo(size * 0.72f, size * 0.75f)
-            close()
-        }
         canvas.save()
-        canvas.translate(centerX, centerY)
+        canvas.translate(arrow.x * screenWidth, arrow.y * screenHeight)
         canvas.rotate(arrow.angle)
-        canvas.drawPath(path, arrowFill)
+        canvas.scale(size, size)
+        canvas.drawPath(arrowPath, arrowFill)
         canvas.restore()
     }
 
     override fun onDetachedFromWindow() {
-        handler.removeCallbacks(freshnessTick)
+        expiryTask?.let(expiryHandler::removeCallbacks)
+        expiryTask = null
         currentFrame = null
         super.onDetachedFromWindow()
+    }
+
+    companion object {
+        private const val FRAME_TTL_MS = 850L
     }
 }
