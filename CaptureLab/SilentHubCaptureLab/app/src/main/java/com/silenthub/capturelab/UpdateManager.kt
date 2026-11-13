@@ -177,11 +177,21 @@ internal class UpdateManager(context: Context) {
         }
     }
 
-    fun install(file: File) {
+    fun install(file: File, info: UpdateInfo) {
+        require(info.versionCode > currentVersionCode()) {
+            "El paquete no es una versión superior a la instalada."
+        }
         require(file.isFile && file.length() in 1..MAX_APK_BYTES) {
             "El paquete de instalación no es válido."
         }
+
+        // Revalidate at install time to close the gap between download verification and user action.
+        verifyFile(file, info)
+        verifyPackageAndSigner(file, info)
+
         val installer = app.packageManager.packageInstaller
+        // MODE_FULL_INSTALL replaces the installed package in place. Android preserves
+        // app data and the Keystore-backed pairing token when package ID and signer match.
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         params.setAppPackageName(app.packageName)
         val sessionId = installer.createSession(params)
