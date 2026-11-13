@@ -1,0 +1,34 @@
+#!/usr/bin/env sh
+# Minimal bootstrap wrapper for Gradle 8.13. Downloads the official distribution
+# and verifies its published SHA-256 before running it.
+set -eu
+VERSION="8.13"
+EXPECTED="20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78"
+GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
+BASE="$GRADLE_USER_HOME/manual-wrapper"
+DIST="$BASE/gradle-$VERSION"
+ZIP="$BASE/gradle-$VERSION-bin.zip"
+if [ ! -x "$DIST/bin/gradle" ]; then
+  mkdir -p "$BASE"
+  if [ ! -f "$ZIP" ]; then
+    if command -v curl >/dev/null 2>&1; then
+      curl -fL --retry 3 "https://services.gradle.org/distributions/gradle-$VERSION-bin.zip" -o "$ZIP"
+    elif command -v wget >/dev/null 2>&1; then
+      wget -O "$ZIP" "https://services.gradle.org/distributions/gradle-$VERSION-bin.zip"
+    else
+      echo "Necesitas curl o wget para descargar Gradle." >&2
+      exit 1
+    fi
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    echo "$EXPECTED  $ZIP" | sha256sum -c -
+  elif command -v shasum >/dev/null 2>&1; then
+    ACTUAL="$(shasum -a 256 "$ZIP" | awk '{print $1}')"
+    [ "$ACTUAL" = "$EXPECTED" ] || { echo "SHA-256 de Gradle no coincide." >&2; exit 1; }
+  else
+    echo "No se encontró sha256sum ni shasum; no se puede verificar Gradle." >&2
+    exit 1
+  fi
+  unzip -q "$ZIP" -d "$BASE"
+fi
+exec "$DIST/bin/gradle" "$@"

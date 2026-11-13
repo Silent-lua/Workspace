@@ -1,0 +1,15 @@
+SilentHub Capture Lab — registro de prueba
+Dispositivo: Samsung Galaxy A55
+Versión Android / One UI: ______________________________
+
+MEDAL
+Marcador visible localmente: SÍ / NO
+Marcador ausente en el video guardado: SÍ / NO
+Imagen de fondo intacta detrás del marcador: SÍ / NO
+Notas: __________________________________________________
+
+GRABADORA DE PANTALLA SAMSUNG
+Marcador visible localmente: SÍ / NO
+Marcador ausente en el video guardado: SÍ / NO
+Imagen de fondo intacta detrás del marcador: SÍ / NO
+Notas: __________________________________________________
