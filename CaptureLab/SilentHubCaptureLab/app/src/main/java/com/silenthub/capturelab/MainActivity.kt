@@ -551,7 +551,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
 
     private fun renderUpdateReady(info: UpdateInfo) {
         updateTitle.text = "v" + info.versionName + " verificada"
-        updateSubtitle.text = "SHA-256 y certificado de firma comprobados. Android solicitará confirmación para instalar."
+        updateSubtitle.text = "Integridad y firma verificadas. Se reemplazará esta versión sin borrar tus datos ni el emparejamiento; Android solicitará confirmación."
         updateProgress.visibility = View.GONE
         updateButton.isEnabled = true
         updateButton.text = "Instalar actualización"
@@ -564,6 +564,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
 
     private fun installUpdate() {
         val file = updateFile ?: return
+        val info = updateInfo ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
             startActivity(Intent(
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
@@ -577,7 +578,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         updateSubtitle.text = "El instalador de Android solicitará confirmación."
         io.execute {
             try {
-                UpdateManager(this).install(file)
+                UpdateManager(this).install(file, info)
                 runOnUiThread {
                     updateTitle.text = "Confirmación de Android"
                     updateSubtitle.text = "Completa la instalación en el diálogo del sistema."
