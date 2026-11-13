@@ -38,6 +38,15 @@ internal class PairingTokenStore(context: Context) {
     }
 
     @Synchronized
+    fun restore(value: String): String {
+        val token = value.trim()
+        require(isValid(token)) { "El código debe contener 43 caracteres válidos." }
+        save(token)
+        legacyPrefs.edit().remove(LEGACY_TOKEN).apply()
+        return token
+    }
+
+    @Synchronized
     fun rotate(): String {
         securePrefs.edit().remove(KEY_CIPHERTEXT).commit()
         legacyPrefs.edit().remove(LEGACY_TOKEN).apply()
