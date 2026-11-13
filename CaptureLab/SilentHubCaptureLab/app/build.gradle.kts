@@ -8,12 +8,12 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        // Separate app ID avoids signature-conflict with the earlier preview build.
+        // Keep the application ID stable; this version upgrades the 0.3.0 companion.
         applicationId = "com.silenthub.capturelab.live"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
     }
 
     compileOptions {
@@ -24,4 +24,8 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+}
+
+dependencies {
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

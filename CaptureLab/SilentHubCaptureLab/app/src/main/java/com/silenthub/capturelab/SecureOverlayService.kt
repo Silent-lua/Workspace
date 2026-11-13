@@ -18,7 +18,7 @@ import android.graphics.PixelFormat
 class SecureOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var overlayView: LiveEspOverlayView? = null
-    private var bridgeServer: LocalEspBridgeServer? = null
+    private var realtimeReceiver: SupabaseRealtimeEspReceiver? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -41,10 +41,8 @@ class SecureOverlayService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (bridgeServer == null && !startBridgeServer()) {
-            setState(true, false, "bridge_start_failed")
-        } else {
-            setState(true, true, "ready")
+        if (realtimeReceiver == null && !startRealtimeReceiver()) {
+            setState(true, false, "pairing_token_missing")
         }
         return START_NOT_STICKY
     }
@@ -82,15 +80,22 @@ class SecureOverlayService : Service() {
         }
     }
 
-    private fun startBridgeServer(): Boolean {
+    private fun startRealtimeReceiver(): Boolean {
+        val token = getSharedPreferences(PREFS, MODE_PRIVATE)
+            .getString(KEY_PAIRING_TOKEN, "")?.trim().orEmpty()
+        if (!token.matches(Regex("^[A-Za-z0-9_-]{43}$"))) return false
         return try {
-            val server = LocalEspBridgeServer { frame -> overlayView?.accept(frame) }
-            server.start()
-            bridgeServer = server
+            val receiver = SupabaseRealtimeEspReceiver(
+                pairingToken = token,
+                onFrame = { frame -> overlayView?.accept(frame) },
+                onStatus = { status -> setState(true, status == "connected", status) }
+            )
+            realtimeReceiver = receiver
+            receiver.start()
             true
         } catch (_: Exception) {
-            bridgeServer?.close()
-            bridgeServer = null
+            realtimeReceiver?.close()
+            realtimeReceiver = null
             false
         }
     }
@@ -126,7 +131,7 @@ class SecureOverlayService : Service() {
         }
         return builder
             .setContentTitle("SilentHub External ESP")
-            .setContentText("Receptor local activo en 127.0.0.1:" + PORT)
+            .setContentText("Vercel relay + Supabase Realtime)
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setContentIntent(openPending)
             .setOngoing(true)
@@ -152,8 +157,8 @@ class SecureOverlayService : Service() {
     }
 
     override fun onDestroy() {
-        bridgeServer?.close()
-        bridgeServer = null
+        realtimeReceiver?.close()
+        realtimeReceiver = null
         overlayView?.let { view ->
             try { windowManager?.removeView(view) } catch (_: IllegalArgumentException) { }
         }
@@ -166,13 +171,13 @@ class SecureOverlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
-        const val PREFS = "external_esp_state_v3"
+        const val PREFS = "external_esp_state_v4"
         const val KEY_RUNNING = "overlay_running"
         const val KEY_BRIDGE = "bridge_running"
         const val KEY_DETAIL = "state_detail"
-        const val PORT = LocalEspBridgeServer.PORT
-        private const val CHANNEL_ID = "silent_hub_external_esp_v3"
-        private const val NOTIFICATION_ID = 4110
+        const val KEY_PAIRING_TOKEN = "pairing_token"
+                private const val CHANNEL_ID = "silent_hub_external_esp_v4"
+        private const val NOTIFICATION_ID = 4111
         private const val ACTION_STOP = "com.silenthub.capturelab.STOP_EXTERNAL_ESP"
     }
 }

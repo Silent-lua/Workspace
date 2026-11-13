@@ -1,30 +1,50 @@
 package com.silenthub.capturelab
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Base64
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import java.security.SecureRandom
 
 class MainActivity : Activity() {
     private lateinit var statusView: TextView
+    private lateinit var pairingCodeView: TextView
+
+    private val statusPoll = object : Runnable {
+        override fun run() {
+            if (::statusView.isInitialized) refreshStatus()
+            if (::statusView.isInitialized) statusView.postDelayed(this, 1000L)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ensurePairingToken()
         buildScreen()
     }
 
     override fun onResume() {
         super.onResume()
         refreshStatus()
+        if (::statusView.isInitialized) statusView.post(statusPoll)
+    }
+
+    override fun onPause() {
+        if (::statusView.isInitialized) statusView.removeCallbacks(statusPoll)
+        super.onPause()
     }
 
     private fun buildScreen() {
@@ -37,14 +57,25 @@ class MainActivity : Activity() {
             isFillViewport = true
             addView(root)
         }
+
         root.addView(text("SILENTHUB", 13f, Color.rgb(255, 70, 70), true))
         root.addView(text("External ESP", 29f, Color.WHITE, true).apply {
             setPadding(0, dp(6), 0, dp(4))
         })
         root.addView(text(
-            "Receptor local • overlay transparente protegido • versión 0.3.0",
+            "Vercel HTTPS Relay • Supabase Realtime • 0.4.0",
             14f, Color.rgb(174, 190, 201), false
         ))
+
+        root.addView(sectionTitle("CÓDIGO DE EMPAREJAMIENTO"), marginTopParams(dp(24)))
+        pairingCodeView = text(pairingToken(), 12f, Color.WHITE, true).apply {
+            setPadding(dp(12), dp(13), dp(12), dp(13))
+            setBackgroundColor(Color.rgb(20, 24, 33))
+            setTextIsSelectable(true)
+        }
+        root.addView(pairingCodeView, marginTopParams(dp(8)))
+        root.addView(actionButton("Copiar código para Delta") { copyPairingToken() }, marginTopParams(dp(8)))
+        root.addView(actionButton("Generar código nuevo") { rotatePairingToken() }, marginTopParams(dp(8)))
 
         val statusCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -56,11 +87,11 @@ class MainActivity : Activity() {
             setPadding(0, dp(7), 0, 0)
         }
         statusCard.addView(statusView)
-        root.addView(statusCard, marginTopParams(dp(24)))
+        root.addView(statusCard, marginTopParams(dp(20)))
 
         root.addView(sectionTitle("CONTROLES"), marginTopParams(dp(26)))
         root.addView(actionButton("1. Conceder permiso de ventana flotante") { openOverlaySettings() }, marginTopParams(dp(10)))
-        root.addView(actionButton("2. Iniciar receptor ESP protegido") { startSecureOverlay() }, marginTopParams(dp(10)))
+        root.addView(actionButton("2. Iniciar receptor externo") { startSecureOverlay() }, marginTopParams(dp(10)))
         root.addView(actionButton("3. Detener receptor y overlay") {
             stopService(Intent(this, SecureOverlayService::class.java))
             refreshStatus()
@@ -68,11 +99,12 @@ class MainActivity : Activity() {
 
         root.addView(sectionTitle("CONEXIÓN CON DELTA"), marginTopParams(dp(28)))
         root.addView(text(
-            "1. Inicia este receptor y deja activa la notificación de SilentHub.\n" +
-                "2. Abre Delta y ejecuta SilentHub-Bimo-Streaming-ESP.lua.\n" +
-                "3. En Visuales, activa Mode Streaming (ESP externo).\n" +
-                "4. Activa ESP Jugadores y las opciones que quieras mostrar.\n\n" +
-                "El script envía las posiciones proyectadas a 127.0.0.1:18273. El overlay solo dibuja datos reales recibidos desde Delta; no contiene jugadores ficticios.",
+            "1. Copia el código de emparejamiento de esta pantalla.\n" +
+                "2. Inicia el receptor externo y deja activa la notificación de SilentHub.\n" +
+                "3. Abre Delta y ejecuta SilentHub-Bimo-Streaming-ESP.lua.\n" +
+                "4. En Visuales, pega el código en Código de conexión.\n" +
+                "5. Activa Mode Streaming (ESP externo), ESP Jugadores y las opciones que quieras.\n\n" +
+                "Delta envía frames por HTTPS a silenthub-web.vercel.app; el móvil recibe los cuadros por Supabase Realtime. Ya no se usa localhost.",
             14f, Color.rgb(198, 210, 218), false
         ), marginTopParams(dp(10)))
 
@@ -82,20 +114,56 @@ class MainActivity : Activity() {
                 "• Mostrar Nombre y Mostrar Distancia: etiquetas rojas.\n" +
                 "• Tracers / Líneas: líneas rojas.\n" +
                 "• Off-screen arrows: flechas rojas en el borde.\n" +
-                "• El color se mantiene fijo en #FF0000.",
+                "• Color fijo: #FF0000.",
             13f, Color.rgb(174, 190, 201), false
         ), marginTopParams(dp(10)))
 
-        root.addView(sectionTitle("PROTECCIÓN"), marginTopParams(dp(24)))
+        root.addView(sectionTitle("SEGURIDAD"), marginTopParams(dp(24)))
         root.addView(text(
-            "El overlay usa FLAG_SECURE y una ventana transparente no táctil. Los datos se reciben únicamente por loopback (127.0.0.1); el servidor no escucha conexiones desde Wi‑Fi ni desde la red local. Si Delta no logra conectar, comprueba que el receptor esté iniciado y vuelve a activar Mode Streaming.",
+            "El overlay mantiene FLAG_SECURE. El código de emparejamiento es aleatorio y funciona como credencial de publicación: no lo compartas. La clave secreta de Supabase permanece en Vercel; el APK solo incorpora la clave publishable pública.",
             13f, Color.rgb(153, 171, 182), false
         ), marginTopParams(dp(10)))
 
-        root.addView(text("SilentHub External ESP • 0.3.0", 11f, Color.rgb(104, 116, 132), false).apply {
+        root.addView(text("SilentHub External ESP • 0.4.0", 11f, Color.rgb(104, 116, 132), false).apply {
             gravity = Gravity.CENTER
         }, marginTopParams(dp(30)))
         setContentView(scroll)
+    }
+
+    private fun ensurePairingToken(): String {
+        val prefs = getSharedPreferences(SecureOverlayService.PREFS, MODE_PRIVATE)
+        val old = prefs.getString(SecureOverlayService.KEY_PAIRING_TOKEN, "")?.trim().orEmpty()
+        if (old.matches(Regex("^[A-Za-z0-9_-]{43}$"))) return old
+        return createPairingToken().also {
+            prefs.edit().putString(SecureOverlayService.KEY_PAIRING_TOKEN, it).apply()
+        }
+    }
+
+    private fun createPairingToken(): String {
+        val bytes = ByteArray(32)
+        SecureRandom().nextBytes(bytes)
+        return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+    }
+
+    private fun pairingToken(): String = ensurePairingToken()
+
+    private fun copyPairingToken() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("SilentHub External ESP pairing code", pairingToken()))
+        statusView.text = "Código copiado. Pégalo en Delta → Visuales → Código de conexión."
+    }
+
+    private fun rotatePairingToken() {
+        stopService(Intent(this, SecureOverlayService::class.java))
+        val token = createPairingToken()
+        getSharedPreferences(SecureOverlayService.PREFS, MODE_PRIVATE).edit()
+            .putString(SecureOverlayService.KEY_PAIRING_TOKEN, token)
+            .putBoolean(SecureOverlayService.KEY_RUNNING, false)
+            .putBoolean(SecureOverlayService.KEY_BRIDGE, false)
+            .putString(SecureOverlayService.KEY_DETAIL, "pairing_token_rotated")
+            .apply()
+        pairingCodeView.text = token
+        refreshStatus()
     }
 
     private fun openOverlaySettings() {
@@ -110,9 +178,10 @@ class MainActivity : Activity() {
             openOverlaySettings()
             return
         }
+        ensurePairingToken()
         val intent = Intent(this, SecureOverlayService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
-        statusView.text = "Iniciando receptor local…"
+        statusView.text = "Conectando a Supabase Realtime…"
         statusView.postDelayed({ refreshStatus() }, 700L)
     }
 
@@ -124,8 +193,12 @@ class MainActivity : Activity() {
         val detail = prefs.getString(SecureOverlayService.KEY_DETAIL, "") ?: ""
         statusView.text = when {
             !allowed -> "Permiso pendiente: autoriza mostrar sobre otras aplicaciones."
-            running && bridge -> "Receptor activo • 127.0.0.1:" + SecureOverlayService.PORT + "\nEsperando datos de Delta."
-            running -> "Overlay activo, pero el puerto local no pudo iniciarse: " + detail + "."
+            running && bridge -> "Supabase Realtime conectado • esperando frames de Delta."
+            running && detail == "connecting" -> "Conectando al canal Realtime…"
+            running && detail == "network_error" -> "No se pudo abrir el WebSocket. Reintentando."
+            running && detail == "channel_rejected" -> "Supabase rechazó el canal. Comprueba la configuración."
+            running && detail == "pairing_token_missing" -> "Falta el código de emparejamiento. Genera uno y reinicia."
+            running -> "Overlay activo • estado del relay: " + detail
             else -> "Permiso concedido • receptor detenido."
         }
     }
