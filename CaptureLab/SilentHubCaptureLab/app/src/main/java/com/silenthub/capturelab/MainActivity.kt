@@ -39,12 +39,12 @@ class MainActivity : Activity() {
         }
 
         root.addView(text("SILENTHUB", 13f, Color.rgb(138, 242, 197), true))
-        root.addView(text("Capture Lab", 30f, Color.WHITE, true).apply {
+        root.addView(text("External Preview", 29f, Color.WHITE, true).apply {
             setPadding(0, dp(6), 0, dp(4))
         })
         root.addView(text(
-            "Prueba de aislamiento de una ventana flotante protegida en Android.",
-            15f, Color.rgb(174, 190, 201), false
+            "Capa transparente independiente • prueba de captura 0.2.0",
+            14f, Color.rgb(174, 190, 201), false
         ))
 
         val statusCard = LinearLayout(this).apply {
@@ -59,35 +59,40 @@ class MainActivity : Activity() {
         statusCard.addView(statusView)
         root.addView(statusCard, marginTopParams(dp(24)))
 
-        root.addView(sectionTitle("PRUEBA"), marginTopParams(dp(26)))
+        root.addView(sectionTitle("CONTROLES"), marginTopParams(dp(26)))
         root.addView(actionButton("1. Conceder permiso de ventana flotante") {
             openOverlaySettings()
         }, marginTopParams(dp(10)))
-        root.addView(actionButton("2. Mostrar marcador seguro") {
+        root.addView(actionButton("2. Mostrar transparent ESP preview") {
             startSecureOverlay()
         }, marginTopParams(dp(10)))
-        root.addView(actionButton("3. Ocultar marcador") {
+        root.addView(actionButton("3. Detener overlay") {
             stopService(Intent(this, SecureOverlayService::class.java))
             refreshStatus()
         }, marginTopParams(dp(10)))
 
-        root.addView(sectionTitle("CÓMO COMPROBARLO"), marginTopParams(dp(28)))
+        root.addView(sectionTitle("QUÉ APARECERÁ"), marginTopParams(dp(28)))
         root.addView(text(
-            "• Concede el permiso de mostrar sobre otras aplicaciones.\n" +
-                "• Pulsa “Mostrar marcador seguro”. Debe aparecer un recuadro verde sobre la pantalla.\n" +
-                "• Abre Roblox y graba con Medal. Revisa si el marcador desaparece del video y si el juego sigue visible debajo.\n" +
-                "• Repite la prueba con la grabadora de Samsung.\n" +
-                "• Vuelve aquí y pulsa “Ocultar marcador” al terminar.",
+            "• Tres cajas de jugador de demostración.\n" +
+                "• Líneas tracer desde la zona inferior.\n" +
+                "• Nombres y distancias ficticios.\n" +
+                "• Fondo completamente transparente: no se dibuja ningún panel opaco.",
             14f, Color.rgb(198, 210, 218), false
         ), marginTopParams(dp(10)))
 
-        root.addView(sectionTitle("LÍMITES DE ESTA VERSIÓN"), marginTopParams(dp(28)))
+        root.addView(sectionTitle("PRUEBA DE GRABACIÓN"), marginTopParams(dp(28)))
         root.addView(text(
-            "Esta aplicación solo dibuja un marcador de prueba. No se conecta a Delta, no lee Roblox y no contiene un ESP. “FLAG_SECURE” protege la ventana completa, no cada elemento dibujado. El resultado depende de cómo One UI y cada grabador traten las ventanas protegidas.",
+            "Con el overlay activo, graba Roblox con Medal y luego con la grabadora Samsung. El resultado correcto es que no aparezcan cajas, líneas ni textos, y que la escena del juego que está debajo permanezca completa, sin rectángulos negros ni pantalla negra.",
             13f, Color.rgb(153, 171, 182), false
         ), marginTopParams(dp(10)))
 
-        root.addView(text("SilentHub Capture Lab • Prototype 0.1.0", 11f, Color.rgb(104, 126, 139), false).apply {
+        root.addView(sectionTitle("LÍMITES"), marginTopParams(dp(28)))
+        root.addView(text(
+            "Esta versión solo dibuja elementos ficticios. Todavía no recibe coordenadas de Delta ni implementa un ESP conectado al juego. Primero debemos validar esta capa a pantalla completa en cada grabador.",
+            13f, Color.rgb(153, 171, 182), false
+        ), marginTopParams(dp(10)))
+
+        root.addView(text("SilentHub External Preview • 0.2.0", 11f, Color.rgb(104, 126, 139), false).apply {
             gravity = Gravity.CENTER
         }, marginTopParams(dp(30)))
 
@@ -117,7 +122,7 @@ class MainActivity : Activity() {
         } else {
             startService(intent)
         }
-        statusView.text = "Solicitud enviada. El marcador debería aparecer sobre las aplicaciones."
+        statusView.text = "Solicitando la capa transparente…"
     }
 
     private fun refreshStatus() {
@@ -126,8 +131,8 @@ class MainActivity : Activity() {
             .getBoolean(SecureOverlayService.KEY_RUNNING, false)
         statusView.text = when {
             !allowed -> "Permiso pendiente: autoriza “mostrar sobre otras aplicaciones”."
-            running -> "Permiso concedido • marcador activo."
-            else -> "Permiso concedido • marcador detenido."
+            running -> "Permiso concedido • preview transparente activo."
+            else -> "Permiso concedido • overlay detenido."
         }
     }
 

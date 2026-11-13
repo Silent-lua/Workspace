@@ -1,15 +1,18 @@
-SilentHub Capture Lab — registro de prueba
+SilentHub External Preview 0.2.0 — registro de prueba
 Dispositivo: Samsung Galaxy A55
-Versión Android / One UI: ______________________________
+Android / One UI: ______________________
+Medal versión: _________________________
 
 MEDAL
-Marcador visible localmente: SÍ / NO
-Marcador ausente en el video guardado: SÍ / NO
-Imagen de fondo intacta detrás del marcador: SÍ / NO
+Overlay visible en el teléfono: SÍ / NO
+Cajas y tracers ausentes en el video: SÍ / NO
+Escena de Roblox completa detrás (sin negro): SÍ / NO
 Notas: __________________________________________________
 
-GRABADORA DE PANTALLA SAMSUNG
-Marcador visible localmente: SÍ / NO
-Marcador ausente en el video guardado: SÍ / NO
-Imagen de fondo intacta detrás del marcador: SÍ / NO
+GRABADORA SAMSUNG
+Overlay visible en el teléfono: SÍ / NO
+Cajas y tracers ausentes en el video: SÍ / NO
+Escena de Roblox completa detrás (sin negro): SÍ / NO
 Notas: __________________________________________________
+
+Aprobación de esta fase: las dos grabadoras deben excluir todos los dibujos y conservar intacta la escena inferior.
