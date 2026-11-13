@@ -131,7 +131,7 @@ class SecureOverlayService : Service() {
         }
         return builder
             .setContentTitle("SilentHub External ESP")
-            .setContentText("Vercel relay + Supabase Realtime)
+            .setContentText("Vercel relay + Supabase Realtime")
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setContentIntent(openPending)
             .setOngoing(true)
