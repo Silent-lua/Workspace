@@ -48,7 +48,12 @@ jobs:
       - name: Build signed APK
         run: |
           VERSION_NAME="${GITHUB_REF_NAME#v}"
-          APP_VERSION_CODE=6
+          IFS='.' read -r VERSION_MAJOR VERSION_MINOR VERSION_PATCH <<< "$VERSION_NAME"
+          APP_VERSION_CODE=$((VERSION_MAJOR * 1000000 + VERSION_MINOR * 1000 + VERSION_PATCH))
+          if [ "$APP_VERSION_CODE" -le 5 ]; then
+            echo "Release versionCode must be greater than the debug baseline (5)." >&2
+            exit 1
+          fi
           gradle -p CaptureLab/SilentHubCaptureLab -PappVersionName="$VERSION_NAME" -PappVersionCode="$APP_VERSION_CODE" assembleRelease
       - name: Prepare release assets
         run: |

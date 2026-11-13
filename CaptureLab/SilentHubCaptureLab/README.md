@@ -14,7 +14,7 @@
 Paste the pairing code into Delta once. The app detects the session automatically on the first valid frame. Regenerating the code revokes the old channel.
 
 ## Initial signing migration
-The 0.4.x/0.5.0 package is a GitHub Actions debug build (versionCode 5). The first signed release deliberately uses versionCode 6 so the installed debug app can detect the migration. Android will not update a package signed with a different certificate. For the first migration only, export the pairing code, uninstall the debug build and install the first signed release. Subsequent releases must reuse the same keystore and increment versionCode.
+The 0.4.x/0.5.0 package is a GitHub Actions debug build (versionCode 5). The signed-release workflow derives a monotonically increasing Android versionCode from SemVer (major × 1,000,000 + minor × 1,000 + patch), so a tag such as v0.5.1 is newer than the debug baseline. Android will not update a package signed with a different certificate. For the first migration only, export the pairing code, uninstall the debug build and install the first signed release. Subsequent releases must reuse the same keystore.
 
 ## Release signing
 Add repository Actions secrets before pushing a version tag:
