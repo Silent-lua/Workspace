@@ -7,14 +7,14 @@
 - The foreground service uses START_STICKY for system recovery and respects an explicit user stop.
 - The secure Canvas invalidates on new frames and once on frame expiry. No idle redraw timer runs.
 - WorkManager checks every six hours with network and battery-not-low constraints. Checks and downloads are deferred during an active receiver session.
-- Updates validate HTTPS origin, package ID, versionCode, exact size, SHA-256 and the installed signing certificate before PackageInstaller is called.
-- Android displays its own install confirmation. Ordinary apps cannot silently install or guarantee rollback.
+- Updates validate HTTPS origin, package ID, newer versionCode, exact size, SHA-256 and the installed signing certificate both after download and immediately before installation.
+- `PackageInstaller.MODE_FULL_INSTALL` performs an in-place package replacement: app data and the encrypted pairing token remain when the application ID and persistent signing certificate match. Android still displays its own install confirmation; ordinary apps cannot silently install or guarantee rollback.
 
 ## Pairing
 Paste the pairing code into Delta once. The app detects the session automatically on the first valid frame. Regenerating the code revokes the old channel.
 
 ## Initial signing migration
-The 0.4.x/0.5.0 package is a GitHub Actions debug build (versionCode 5). The signed-release workflow derives a monotonically increasing Android versionCode from SemVer (major × 1,000,000 + minor × 1,000 + patch), so a tag such as v0.5.1 is newer than the debug baseline. Android will not update a package signed with a different certificate. For the first migration only, export the pairing code, uninstall the debug build and install the first signed release. Subsequent releases must reuse the same keystore.
+The 0.5.0 APK previously shared from CI is a debug build (versionCode 5) signed with a temporary CI debug certificate. Android will not replace it with the production certificate as an in-place update. For this one-time migration only, export the pairing code, uninstall the debug build and install the first signed release. From that first signed installation onward, every release built with the same persistent keystore is installed in place and retains app data and the encrypted pairing token. The signed-release workflow calculates the Android versionCode from the validated SemVer tag (major × 1,000,000 + minor × 1,000 + patch) and writes that exact same value into both the APK and release metadata.
 
 ## Release signing
 Add repository Actions secrets before pushing a version tag:
