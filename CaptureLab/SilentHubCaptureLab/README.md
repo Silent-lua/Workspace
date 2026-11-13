@@ -1,32 +1,32 @@
-# SilentHub External Preview 0.2.0
+# SilentHub External ESP 0.5.0
 
-## Purpose
-This is a capture-compatibility preview for the Galaxy A55. It creates a full-screen transparent Android application overlay protected with `WindowManager.LayoutParams.FLAG_SECURE`. The overlay draws three mock ESP examples: player boxes, tracers, names, and distance labels.
+## Engineering changes
+- Android Keystore AES-GCM protects the pairing token. The 0.4.x plaintext preference is migrated once and deleted.
+- Supabase join acknowledgement is shown as Connected. Paired requires the first valid Delta frame.
+- Connection state is event-driven; the Activity has no one-second polling loop.
+- The foreground service uses START_STICKY for system recovery and respects an explicit user stop.
+- The secure Canvas invalidates on new frames and once on frame expiry. No idle redraw timer runs.
+- WorkManager checks every six hours with network and battery-not-low constraints. Checks and downloads are deferred during an active receiver session.
+- Updates validate HTTPS origin, package ID, versionCode, exact size, SHA-256 and the installed signing certificate before PackageInstaller is called.
+- Android displays its own install confirmation. Ordinary apps cannot silently install or guarantee rollback.
 
-## How to run
-1. Install and open **SilentHub External Preview**.
-2. Grant **Display over other apps** permission.
-3. Press **Show transparent ESP preview**.
-4. Confirm that the sample boxes, tracers, and labels are visible over the current app.
-5. Record Roblox using Medal and review the saved video.
-6. Repeat using Samsung Screen Recorder.
-7. Verify both conditions:
-   - No demo box, tracer, text, or overlay artwork appears in the saved video.
-   - The Roblox scene below the overlay remains fully visible (no black rectangle or black screen).
-8. Return to the app and press **Stop overlay**, or use the notification action.
+## Pairing
+Paste the pairing code into Delta once. The app detects the session automatically on the first valid frame. Regenerating the code revokes the old channel.
 
-## Critical technical notes
-- The overlay is a single full-screen secure window. `FLAG_SECURE` protects the entire window, not individual Canvas primitives.
-- The window background is transparent; only mock ESP strokes and text are drawn.
-- The window alpha is 0.75 to stay below Android's default maximum obscuring opacity for a single application overlay on Android 12+ and preserve touch pass-through when allowed by the system.
-- The app does not connect to Delta, read Roblox state, or contain a live ESP.
-- A successful preview proves only that this rendering layer is hidden from that capture path on the tested device/app version. It does not guarantee every recorder behaves identically.
+## Initial signing migration
+The 0.4.x package was a GitHub Actions debug build. A production release must use one persistent release keystore. Android will not update a package signed with a different certificate. For the first migration only, export the pairing code, uninstall the debug build and install the first signed release. Subsequent releases must reuse the same keystore.
 
-## Build
-Requirements: JDK 17+, Android SDK Platform 35 and Android Build Tools 35.
+## Release signing
+Add repository Actions secrets before pushing a version tag:
+- ANDROID_KEYSTORE_BASE64
+- ANDROID_KEYSTORE_PASSWORD
+- ANDROID_KEY_ALIAS
+- ANDROID_KEY_PASSWORD
 
-```sh
-./gradlew assembleDebug
-```
+The signed-release workflow generates the APK, SHA-256 sidecar and release JSON expected by Vercel. Publication remains unavailable until the persistent keystore secrets are configured.
 
-Output: `app/build/outputs/apk/debug/app-debug.apk`
+## Build and tests
+gradle -p CaptureLab/SilentHubCaptureLab testDebugUnitTest assembleDebug
+
+## Platform limits
+Minimum Android 8.0 (API 26); target API 35. Overlay, notifications and unknown-source installation use Android system prompts. OEM battery and background restrictions remain controlled by Android/Samsung.

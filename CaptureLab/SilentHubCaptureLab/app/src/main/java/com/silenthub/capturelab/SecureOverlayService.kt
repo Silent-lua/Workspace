@@ -133,10 +133,16 @@ class SecureOverlayService : Service() {
                         .getString(KEY_CONNECTION_STATE, "") != ConnectionState.PAIRED.name) {
                     setConnectionState(ConnectionState.PAIRED, "first_valid_frame_received")
                 }
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                    .putLong(KEY_LAST_FRAME, System.currentTimeMillis())
-                    .putInt(KEY_LAST_PLAYER_COUNT, frame.players.size)
-                    .apply()
+                val healthPrefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+                val previousCount = healthPrefs.getInt(KEY_LAST_PLAYER_COUNT, -1)
+                val lastPersisted = healthPrefs.getLong(KEY_LAST_FRAME, 0L)
+                val now = System.currentTimeMillis()
+                if (previousCount != frame.players.size || now - lastPersisted >= FRAME_HEALTH_PERSIST_MS) {
+                    healthPrefs.edit()
+                        .putLong(KEY_LAST_FRAME, now)
+                        .putInt(KEY_LAST_PLAYER_COUNT, frame.players.size)
+                        .apply()
+                }
             },
             onStatus = { status ->
                 when (status) {
@@ -247,5 +253,6 @@ class SecureOverlayService : Service() {
         private const val NOTIFICATION_ID = 4112
         private const val ACTION_STOP = "com.silenthub.capturelab.STOP_EXTERNAL_ESP"
         private const val FRAME_STALE_MS = 2_500L
+        private const val FRAME_HEALTH_PERSIST_MS = 5_000L
     }
 }

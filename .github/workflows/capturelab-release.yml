@@ -1,0 +1,80 @@
+name: Publish signed SilentHub External ESP release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  signed-release:
+    runs-on: ubuntu-24.04
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Validate release signing secrets
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+      - name: Install Android SDK 35
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Restore persistent signing key
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/silent-hub-release.jks"
+          chmod 600 "$RUNNER_TEMP/silent-hub-release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/silent-hub-release.jks" >> "$GITHUB_ENV"
+      - name: Build signed APK
+        run: |
+          VERSION_NAME="${GITHUB_REF_NAME#v}"
+          gradle -p CaptureLab/SilentHubCaptureLab -PappVersionName="$VERSION_NAME" assembleRelease
+      - name: Prepare release assets
+        run: |
+          VERSION_NAME="${GITHUB_REF_NAME#v}"
+          VERSION_CODE="$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\)$/\1/p' CaptureLab/SilentHubCaptureLab/app/build.gradle.kts | head -1)"
+          mkdir -p release-assets
+          cp CaptureLab/SilentHubCaptureLab/app/build/outputs/apk/release/app-release.apk release-assets/SilentHub-External-ESP.apk
+          cd release-assets
+          sha256sum SilentHub-External-ESP.apk > SilentHub-External-ESP.apk.sha256
+          cat > SilentHub-External-ESP.release.json <<JSON
+          {
+            "versionName": "$VERSION_NAME",
+            "versionCode": $VERSION_CODE,
+            "mandatory": true,
+            "minimumSupportedVersionCode": $VERSION_CODE,
+            "changelog": "Premium UI, encrypted pairing, precise connection states, event-driven rendering and verified updates."
+          }
+          JSON
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: SilentHub External ESP ${{ github.ref_name }}
+          files: |
+            release-assets/SilentHub-External-ESP.apk
+            release-assets/SilentHub-External-ESP.apk.sha256
+            release-assets/SilentHub-External-ESP.release.json
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

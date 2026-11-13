@@ -279,7 +279,7 @@ internal class LocalEspBridgeServer(
     }
 }
 
-/** Event-driven renderer. It invalidates on frames and once when a frame expires. */
+/** Event-driven renderer. No idle redraw timer is used. */
 internal class LiveEspOverlayView(context: Context) : View(context) {
     private val density = resources.displayMetrics.density
     private val expiryHandler = Handler(Looper.getMainLooper())
@@ -334,12 +334,12 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
         currentFrame = frame
         expiryTask?.let(expiryHandler::removeCallbacks)
         invalidate()
-        val task = Runnable {
+        lateinit var task: Runnable
+        task = Runnable {
             if (currentFrame === frame) {
                 val remaining = FRAME_TTL_MS - (SystemClock.elapsedRealtime() - frame.receivedAt)
-                if (remaining > 0L) {
-                    expiryHandler.postDelayed(this, remaining)
-                } else {
+                if (remaining > 0L) expiryHandler.postDelayed(task, remaining)
+                else {
                     currentFrame = null
                     invalidate()
                 }
@@ -361,10 +361,8 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
             val box = player.box
             if (frame.showLines) {
                 player.tracer?.let { line ->
-                    canvas.drawLine(
-                        line.x1 * screenWidth, line.y1 * screenHeight,
-                        line.x2 * screenWidth, line.y2 * screenHeight, tracerLine
-                    )
+                    canvas.drawLine(line.x1 * screenWidth, line.y1 * screenHeight,
+                        line.x2 * screenWidth, line.y2 * screenHeight, tracerLine)
                 }
             }
             if (frame.glow && box != null) {
@@ -390,9 +388,7 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
                     drawLabel(canvas, value, anchorX, anchorY)
                 }
             }
-            if (frame.showArrows) {
-                player.arrow?.let { drawArrow(canvas, it, screenWidth, screenHeight) }
-            }
+            if (frame.showArrows) player.arrow?.let { drawArrow(canvas, it, screenWidth, screenHeight) }
         }
     }
 
