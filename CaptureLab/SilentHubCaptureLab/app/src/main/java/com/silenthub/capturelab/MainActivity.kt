@@ -221,6 +221,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             leftMargin = dp(8)
         })
         pairCard.addView(pairButtons, topMargin(dp(10)))
+        pairCard.addView(textAction("Restaurar código guardado") { importPairingToken() }, topMargin(dp(7)))
         pairCard.addView(textAction("Regenerar código de acceso") { confirmTokenRotation() }, topMargin(dp(7)))
         content.addView(pairCard, topMargin(dp(10)))
 
@@ -310,6 +311,56 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(clip)
         stateSubtitle.text = "Código copiado. Pégalo en Delta una vez."
         maybeAnimate(stateSubtitle)
+    }
+
+    private fun importPairingToken() {
+        val input = android.widget.EditText(this).apply {
+            hint = "Pega el código de 43 caracteres"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
+            setTextColor(primary)
+            setHintTextColor(muted)
+            typeface = Typeface.create("monospace", Typeface.NORMAL)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = rounded(panelRaised, dp(8), stroke)
+        }
+        val wrapper = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+            addView(input, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        }
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Restaurar código de emparejamiento")
+            .setMessage("Pega el código que guardaste antes de desinstalar la compilación de prueba. Se cifrará de nuevo en este dispositivo y podrás seguir usando el mismo código en Delta.")
+            .setView(wrapper)
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("Restaurar", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                try {
+                    tokenStore.restore(input.text?.toString().orEmpty())
+                } catch (_: IllegalArgumentException) {
+                    input.error = "Código no válido. Debe tener 43 caracteres."
+                    return@setOnClickListener
+                }
+                val restartReceiver = prefs.getBoolean(SecureOverlayService.KEY_RUNNING, false)
+                if (restartReceiver) stopReceiver(userInitiated = false)
+                pairingRevealed = false
+                refreshPairingToken()
+                if (restartReceiver) startButton.postDelayed({ startReceiver(userInitiated = false) }, 400L)
+                android.widget.Toast.makeText(
+                    this,
+                    "Código restaurado y guardado de forma cifrada.",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
     }
 
     private fun confirmTokenRotation() {
