@@ -48,7 +48,8 @@ jobs:
       - name: Build signed APK
         run: |
           VERSION_NAME="${GITHUB_REF_NAME#v}"
-          gradle -p CaptureLab/SilentHubCaptureLab -PappVersionName="$VERSION_NAME" assembleRelease
+          APP_VERSION_CODE=6
+          gradle -p CaptureLab/SilentHubCaptureLab -PappVersionName="$VERSION_NAME" -PappVersionCode="$APP_VERSION_CODE" assembleRelease
       - name: Prepare release assets
         run: |
           VERSION_NAME="${GITHUB_REF_NAME#v}"

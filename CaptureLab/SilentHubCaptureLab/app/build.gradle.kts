@@ -16,7 +16,7 @@ android {
         applicationId = "com.silenthub.capturelab.live"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
+        versionCode = providers.gradleProperty("appVersionCode").orElse("5").get().toInt()
         versionName = providers.gradleProperty("appVersionName").orElse("0.5.0").get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
