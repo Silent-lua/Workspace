@@ -284,10 +284,6 @@ internal class UpdateManager(context: Context) {
     }
 
     @Suppress("DEPRECATION")
-    private fun packageVersionCode(info: PackageInfo): Long =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else info.versionCode.toLong()
-
-    @Suppress("DEPRECATION")
     private fun certificateDigests(info: PackageInfo): Set<String> {
         val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             info.signingInfo?.apkContentsSigners?.toList().orEmpty()

@@ -333,7 +333,7 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
     fun accept(frame: ExternalEspFrame) {
         currentFrame = frame
         expiryTask?.let(expiryHandler::removeCallbacks)
-        invalidate()
+        postInvalidate()
         lateinit var task: Runnable
         task = Runnable {
             if (currentFrame === frame) {
@@ -341,7 +341,7 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
                 if (remaining > 0L) expiryHandler.postDelayed(task, remaining)
                 else {
                     currentFrame = null
-                    invalidate()
+                    postInvalidate()
                 }
             }
         }
