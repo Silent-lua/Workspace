@@ -31,28 +31,27 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(22), dp(28), dp(22), dp(24))
-            setBackgroundColor(Color.rgb(8, 19, 27))
+            setBackgroundColor(Color.rgb(8, 12, 18))
         }
         val scroll = ScrollView(this).apply {
             isFillViewport = true
             addView(root)
         }
-
-        root.addView(text("SILENTHUB", 13f, Color.rgb(138, 242, 197), true))
-        root.addView(text("External Preview", 29f, Color.WHITE, true).apply {
+        root.addView(text("SILENTHUB", 13f, Color.rgb(255, 70, 70), true))
+        root.addView(text("External ESP", 29f, Color.WHITE, true).apply {
             setPadding(0, dp(6), 0, dp(4))
         })
         root.addView(text(
-            "Capa transparente independiente • prueba de captura 0.2.0",
+            "Receptor local • overlay transparente protegido • versión 0.3.0",
             14f, Color.rgb(174, 190, 201), false
         ))
 
         val statusCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(14))
-            setBackgroundColor(Color.rgb(17, 34, 44))
+            setBackgroundColor(Color.rgb(20, 24, 33))
         }
-        statusCard.addView(text("ESTADO", 11f, Color.rgb(138, 242, 197), true))
+        statusCard.addView(text("ESTADO DEL RECEPTOR", 11f, Color.rgb(255, 90, 90), true))
         statusView = text("Comprobando permisos…", 14f, Color.WHITE, false).apply {
             setPadding(0, dp(7), 0, 0)
         }
@@ -60,54 +59,49 @@ class MainActivity : Activity() {
         root.addView(statusCard, marginTopParams(dp(24)))
 
         root.addView(sectionTitle("CONTROLES"), marginTopParams(dp(26)))
-        root.addView(actionButton("1. Conceder permiso de ventana flotante") {
-            openOverlaySettings()
-        }, marginTopParams(dp(10)))
-        root.addView(actionButton("2. Mostrar transparent ESP preview") {
-            startSecureOverlay()
-        }, marginTopParams(dp(10)))
-        root.addView(actionButton("3. Detener overlay") {
+        root.addView(actionButton("1. Conceder permiso de ventana flotante") { openOverlaySettings() }, marginTopParams(dp(10)))
+        root.addView(actionButton("2. Iniciar receptor ESP protegido") { startSecureOverlay() }, marginTopParams(dp(10)))
+        root.addView(actionButton("3. Detener receptor y overlay") {
             stopService(Intent(this, SecureOverlayService::class.java))
             refreshStatus()
         }, marginTopParams(dp(10)))
 
-        root.addView(sectionTitle("QUÉ APARECERÁ"), marginTopParams(dp(28)))
+        root.addView(sectionTitle("CONEXIÓN CON DELTA"), marginTopParams(dp(28)))
         root.addView(text(
-            "• Tres cajas de jugador de demostración.\n" +
-                "• Líneas tracer desde la zona inferior.\n" +
-                "• Nombres y distancias ficticios.\n" +
-                "• Fondo completamente transparente: no se dibuja ningún panel opaco.",
+            "1. Inicia este receptor y deja activa la notificación de SilentHub.\n" +
+                "2. Abre Delta y ejecuta SilentHub-Bimo-Streaming-ESP.lua.\n" +
+                "3. En Visuales, activa Mode Streaming (ESP externo).\n" +
+                "4. Activa ESP Jugadores y las opciones que quieras mostrar.\n\n" +
+                "El script envía las posiciones proyectadas a 127.0.0.1:18273. El overlay solo dibuja datos reales recibidos desde Delta; no contiene jugadores ficticios.",
             14f, Color.rgb(198, 210, 218), false
         ), marginTopParams(dp(10)))
 
-        root.addView(sectionTitle("PRUEBA DE GRABACIÓN"), marginTopParams(dp(28)))
+        root.addView(sectionTitle("OPCIONES ESP"), marginTopParams(dp(24)))
         root.addView(text(
-            "Con el overlay activo, graba Roblox con Medal y luego con la grabadora Samsung. El resultado correcto es que no aparezcan cajas, líneas ni textos, y que la escena del juego que está debajo permanezca completa, sin rectángulos negros ni pantalla negra.",
+            "• Mostrar Brillo / Caja: contorno 2D rojo.\n" +
+                "• Mostrar Nombre y Mostrar Distancia: etiquetas rojas.\n" +
+                "• Tracers / Líneas: líneas rojas.\n" +
+                "• Off-screen arrows: flechas rojas en el borde.\n" +
+                "• El color se mantiene fijo en #FF0000.",
+            13f, Color.rgb(174, 190, 201), false
+        ), marginTopParams(dp(10)))
+
+        root.addView(sectionTitle("PROTECCIÓN"), marginTopParams(dp(24)))
+        root.addView(text(
+            "El overlay usa FLAG_SECURE y una ventana transparente no táctil. Los datos se reciben únicamente por loopback (127.0.0.1); el servidor no escucha conexiones desde Wi‑Fi ni desde la red local. Si Delta no logra conectar, comprueba que el receptor esté iniciado y vuelve a activar Mode Streaming.",
             13f, Color.rgb(153, 171, 182), false
         ), marginTopParams(dp(10)))
 
-        root.addView(sectionTitle("LÍMITES"), marginTopParams(dp(28)))
-        root.addView(text(
-            "Esta versión solo dibuja elementos ficticios. Todavía no recibe coordenadas de Delta ni implementa un ESP conectado al juego. Primero debemos validar esta capa a pantalla completa en cada grabador.",
-            13f, Color.rgb(153, 171, 182), false
-        ), marginTopParams(dp(10)))
-
-        root.addView(text("SilentHub External Preview • 0.2.0", 11f, Color.rgb(104, 126, 139), false).apply {
+        root.addView(text("SilentHub External ESP • 0.3.0", 11f, Color.rgb(104, 116, 132), false).apply {
             gravity = Gravity.CENTER
         }, marginTopParams(dp(30)))
-
         setContentView(scroll)
     }
 
     private fun openOverlaySettings() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            startActivity(Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
-            ))
-        } else {
-            refreshStatus()
-        }
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName)))
+        } else refreshStatus()
     }
 
     private fun startSecureOverlay() {
@@ -117,22 +111,22 @@ class MainActivity : Activity() {
             return
         }
         val intent = Intent(this, SecureOverlayService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
-        statusView.text = "Solicitando la capa transparente…"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
+        statusView.text = "Iniciando receptor local…"
+        statusView.postDelayed({ refreshStatus() }, 700L)
     }
 
     private fun refreshStatus() {
         val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
-        val running = getSharedPreferences(SecureOverlayService.PREFS, MODE_PRIVATE)
-            .getBoolean(SecureOverlayService.KEY_RUNNING, false)
+        val prefs = getSharedPreferences(SecureOverlayService.PREFS, MODE_PRIVATE)
+        val running = prefs.getBoolean(SecureOverlayService.KEY_RUNNING, false)
+        val bridge = prefs.getBoolean(SecureOverlayService.KEY_BRIDGE, false)
+        val detail = prefs.getString(SecureOverlayService.KEY_DETAIL, "") ?: ""
         statusView.text = when {
-            !allowed -> "Permiso pendiente: autoriza “mostrar sobre otras aplicaciones”."
-            running -> "Permiso concedido • preview transparente activo."
-            else -> "Permiso concedido • overlay detenido."
+            !allowed -> "Permiso pendiente: autoriza mostrar sobre otras aplicaciones."
+            running && bridge -> "Receptor activo • 127.0.0.1:" + SecureOverlayService.PORT + "\nEsperando datos de Delta."
+            running -> "Overlay activo, pero el puerto local no pudo iniciarse: " + detail + "."
+            else -> "Permiso concedido • receptor detenido."
         }
     }
 
@@ -140,30 +134,26 @@ class MainActivity : Activity() {
         text = label
         isAllCaps = false
         textSize = 14f
-        setTextColor(Color.rgb(8, 19, 27))
-        setBackgroundColor(Color.rgb(138, 242, 197))
+        setTextColor(Color.WHITE)
+        setBackgroundColor(Color.rgb(174, 36, 42))
         minHeight = dp(52)
         setOnClickListener { action() }
     }
 
-    private fun sectionTitle(value: String): TextView =
-        text(value, 11f, Color.rgb(138, 242, 197), true)
+    private fun sectionTitle(value: String): TextView = text(value, 11f, Color.rgb(255, 90, 90), true)
 
-    private fun text(value: String, size: Float, color: Int, bold: Boolean): TextView =
-        TextView(this).apply {
-            text = value
-            textSize = size
-            setTextColor(color)
-            if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setLineSpacing(dp(3).toFloat(), 1f)
-        }
+    private fun text(value: String, size: Float, color: Int, bold: Boolean): TextView = TextView(this).apply {
+        text = value
+        textSize = size
+        setTextColor(color)
+        if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
+        setLineSpacing(dp(3).toFloat(), 1f)
+    }
 
-    private fun marginTopParams(top: Int): LinearLayout.LayoutParams =
-        LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = top }
+    private fun marginTopParams(top: Int): LinearLayout.LayoutParams = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT
+    ).apply { topMargin = top }
 
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 }
