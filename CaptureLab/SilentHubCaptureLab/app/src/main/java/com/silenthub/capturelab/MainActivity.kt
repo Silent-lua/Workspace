@@ -143,7 +143,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         val scroll = ScrollView(this).apply {
             background = GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.rgb(12, 17, 23), bg, Color.rgb(5, 8, 12))
+                intArrayOf(Color.BLACK, bg, Color.BLACK)
             )
             isFillViewport = true
             clipToPadding = false
@@ -191,7 +191,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), 0, 0, 0)
             addView(label("SILENTHUB", 12f, primary, true).apply { letterSpacing = 0.19f })
-            addView(label("EXTERNAL SYSTEMS", 9f, muted, true).apply {
+            addView(label("EXTERNAL", 9f, muted, true).apply {
                 letterSpacing = 0.14f
                 setPadding(0, dp(3), 0, 0)
             })
@@ -209,6 +209,13 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
 
         // Hero panel
         val hero = card(hero = true)
+        val animatedLogoId = resources.getIdentifier("silenthub_logo", "raw", packageName)
+        if (animatedLogoId != 0) {
+            hero.addView(
+                GifLogoView(this, animatedLogoId),
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(132))
+            )
+        }
         hero.addView(label("FIELD CONSOLE   /   ANDROID CLIENT", 9f, goldLight, true).apply {
             letterSpacing = 0.16f
         })
