@@ -541,15 +541,20 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
 
     private fun performMandatoryGateAction() {
         when {
-            signatureMigrationRequired -> {
-                val url = updateInfo?.releaseUrl
-                    ?: "https://github.com/Silent-lua/Workspace/releases/latest"
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-            }
+            signatureMigrationRequired -> openAppSettingsForMigration()
             updateFile != null -> installUpdate()
             updateInfo != null && !downloadInFlight -> downloadUpdate(updateInfo!!)
             !updateCheckInFlight && !downloadInFlight -> checkForUpdate(force = true)
         }
+    }
+
+    private fun openAppSettingsForMigration() {
+        startActivity(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:" + packageName)
+            )
+        )
     }
 
     private fun refreshMandatoryGate() {
@@ -563,9 +568,9 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         when {
             signatureMigrationRequired -> {
                 gateTitle.text = "Migración inicial de firma"
-                gateSubtitle.text = "Esta instalación de prueba tiene otro certificado. Copia tu código de Delta, desinstala esta versión e instala el release oficial. Después de esa única migración, las actualizaciones conservarán tus datos."
+                gateSubtitle.text = "El APK oficial ya está verificado y guardado en Descargas/SilentHub. Copia tu código de Delta, desinstala esta instalación de prueba y después abre el APK desde Descargas. Es una migración única; las siguientes actualizaciones se instalarán desde SilentHub."
                 gateExportPairingButton.visibility = View.VISIBLE
-                gateActionButton.text = "Abrir release oficial"
+                gateActionButton.text = "Abrir ajustes para desinstalar"
                 gateActionButton.isEnabled = true
             }
             updateFile != null -> {
@@ -816,6 +821,12 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                 val manager = UpdateManager(this)
                 val info = manager.checkLatest(force)
                 val cached = if (info != null) manager.findVerifiedCachedFile(info) else null
+                val cachedSignerMatches = if (cached != null && info != null) {
+                    manager.hasMatchingInstalledSigner(cached, info)
+                } else true
+                if (cached != null && info != null && !cachedSignerMatches) {
+                    manager.saveForManualMigration(cached, info)
+                }
                 runOnUiThread {
                     updateCheckInFlight = false
                     updateButton.isEnabled = true
@@ -850,11 +861,15 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                         mandatoryGate = info.mandatory &&
                             manager.currentVersionCode() < info.minimumSupportedVersionCode
                         prefs.edit().putBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, mandatoryGate).apply()
-                        signatureMigrationRequired = false
-                        if (cached != null) renderUpdateReady(info)
-                        else {
-                            renderUpdateAvailable(info)
-                            if (!prefs.getBoolean(SecureOverlayService.KEY_RUNNING, false)) downloadUpdate(info)
+                        if (cached != null && !cachedSignerMatches) {
+                            renderSignatureMigration(info, cached)
+                        } else {
+                            signatureMigrationRequired = false
+                            if (cached != null) renderUpdateReady(info)
+                            else {
+                                renderUpdateAvailable(info)
+                                if (!prefs.getBoolean(SecureOverlayService.KEY_RUNNING, false)) downloadUpdate(info)
+                            }
                         }
                     }
                 }
@@ -895,7 +910,8 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         refreshMandatoryGate()
         io.execute {
             try {
-                val file = UpdateManager(this).download(info) { downloaded, total ->
+                val manager = UpdateManager(this)
+                val file = manager.download(info) { downloaded, total ->
                     val now = android.os.SystemClock.elapsedRealtime()
                     if (now - lastProgressUiAt >= 180L || downloaded == total) {
                         lastProgressUiAt = now
@@ -913,27 +929,19 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                         }
                     }
                 }
+                if (!manager.hasMatchingInstalledSigner(file, info)) {
+                    manager.saveForManualMigration(file, info)
+                    runOnUiThread {
+                        downloadInFlight = false
+                        renderSignatureMigration(info, file)
+                    }
+                    return@execute
+                }
                 runOnUiThread {
                     downloadInFlight = false
                     updateFile = file
                     updateProgress.visibility = View.GONE
                     renderUpdateReady(info)
-                }
-            } catch (error: ReleaseSignatureMismatchException) {
-                runOnUiThread {
-                    downloadInFlight = false
-                    updateProgress.visibility = View.GONE
-                    signatureMigrationRequired = true
-                    mandatoryGate = true
-                    prefs.edit().putBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, true).apply()
-                    updateTitle.text = "Migración inicial de firma"
-                    updateSubtitle.text = "La APK de prueba y el release utilizan certificados distintos. Esta migración requiere desinstalar la versión de prueba una vez; las siguientes versiones firmadas podrán actualizarse en el sitio."
-                    updateButton.isEnabled = true
-                    updateButton.text = "Abrir release oficial"
-                    updateButton.setOnClickListener {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.releaseUrl)))
-                    }
-                    refreshMandatoryGate()
                 }
             } catch (error: Exception) {
                 runOnUiThread {
@@ -948,6 +956,20 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                 }
             }
         }
+    }
+
+    private fun renderSignatureMigration(info: UpdateInfo, file: File) {
+        signatureMigrationRequired = true
+        mandatoryGate = true
+        updateFile = file
+        prefs.edit().putBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, true).apply()
+        updateTitle.text = "APK oficial descargada · v" + info.versionName
+        updateSubtitle.text = "APK verificada y guardada en Descargas/SilentHub. Copia tu código de Delta; Android requiere desinstalar esta instalación porque usa otra firma. Después abre el APK desde Descargas."
+        updateProgress.visibility = View.GONE
+        updateButton.isEnabled = true
+        updateButton.text = "Abrir ajustes para desinstalar"
+        updateButton.setOnClickListener { openAppSettingsForMigration() }
+        refreshMandatoryGate()
     }
 
     private fun renderUpdateReady(info: UpdateInfo) {
