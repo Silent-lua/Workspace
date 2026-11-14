@@ -882,9 +882,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         stateDot.scaleX = 1f
         stateDot.scaleY = 1f
         stateDot.alpha = 1f
-        if (!active || !ValueAnimator.areAnimatorsEnabled() || !lifecycle.currentState.isAtLeast(
-                androidx.lifecycle.Lifecycle.State.STARTED
-            )) return
+        if (!active || !ValueAnimator.areAnimatorsEnabled()) return
 
         statusPulse = ValueAnimator.ofFloat(1f, 1.22f).apply {
             duration = 1050L
