@@ -365,7 +365,9 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
         val screenWidth = width.toFloat()
         val screenHeight = height.toFloat()
         val prior = previousFrame?.takeIf { it.receivedAt < frame.receivedAt }
-        val sampleDeltaMs = prior?.let { (frame.receivedAt - it.receivedAt).coerceIn(16L, 250L) } ?: 0L
+        val rawSampleDeltaMs = prior?.let { frame.receivedAt - it.receivedAt } ?: 0L
+        // Do not estimate velocity across a long packet gap, respawn or reconnect.
+        val sampleDeltaMs = rawSampleDeltaMs.takeIf { it in 16L..120L } ?: 0L
         // Predict at most 75 ms ahead between network samples. This keeps moving targets
         // visually continuous without an unbounded extrapolation when packets stop.
         val predictionLeadMs = frameAgeMs.coerceAtMost(MAX_PREDICTION_MS)
