@@ -53,6 +53,7 @@ internal class InstallStatusReceiver : BroadcastReceiver() {
                     .apply()
             }
         }
+    }
 
     private fun postConfirmationNotification(context: Context, confirmation: Intent) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -93,6 +94,5 @@ internal class InstallStatusReceiver : BroadcastReceiver() {
         const val KEY_PENDING_CONFIRMATION = "silenthub_pending_install_confirmation"
         private const val CHANNEL_ID = "silenthub_updates"
         private const val NOTIFICATION_ID = 7506
-    }
     }
 }
