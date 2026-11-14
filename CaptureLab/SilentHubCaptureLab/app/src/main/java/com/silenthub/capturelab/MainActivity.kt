@@ -56,6 +56,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private lateinit var gateSubtitle: TextView
     private lateinit var gateProgress: ProgressBar
     private lateinit var gateActionButton: Button
+    private lateinit var gateExportPairingButton: TextView
 
     private var signatureMigrationRequired = false
     private var pairingRevealed = false
@@ -500,6 +501,15 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         content.addView(gateActionButton, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(52)
         ).apply { topMargin = dp(18) })
+        gateExportPairingButton = textAction("Copiar código de Delta antes de migrar") {
+            copyPairingTokenForMigration()
+        }.apply {
+            gravity = Gravity.CENTER
+            minHeight = dp(48)
+        }
+        content.addView(gateExportPairingButton, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
+        ).apply { topMargin = dp(8) })
         content.addView(label(
             "La aplicación permanecerá bloqueada hasta completar la instalación.",
             11f, muted, false
@@ -513,10 +523,27 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         return gate
     }
 
+    private fun copyPairingTokenForMigration() {
+        val token = tokenStore.getOrCreate()
+        val clip = ClipData.newPlainText("SilentHub pairing code", token)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            clip.description.extras = PersistableBundle().apply {
+                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+            }
+        }
+        (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(clip)
+        android.widget.Toast.makeText(
+            this,
+            "Código de Delta copiado. Guárdalo antes de desinstalar esta versión de prueba.",
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+    }
+
     private fun performMandatoryGateAction() {
         when {
             signatureMigrationRequired -> {
-                val url = updateInfo?.releaseUrl ?: return
+                val url = updateInfo?.releaseUrl
+                    ?: "https://github.com/Silent-lua/Workspace/releases/latest"
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
             }
             updateFile != null -> installUpdate()
@@ -532,10 +559,12 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
 
         gateProgress.visibility = if (downloadInFlight || updateCheckInFlight) View.VISIBLE else View.GONE
         gateProgress.isIndeterminate = updateCheckInFlight
+        if (!signatureMigrationRequired) gateExportPairingButton.visibility = View.GONE
         when {
             signatureMigrationRequired -> {
                 gateTitle.text = "Migración inicial de firma"
-                gateSubtitle.text = "Esta instalación de prueba usa un certificado distinto al de distribución. Android no permite actualizarla encima. Guarda tu código de Delta, desinstala esta versión e instala el release oficial. Después de esa única migración, las actualizaciones conservarán tus datos."
+                gateSubtitle.text = "Esta instalación de prueba tiene otro certificado. Copia tu código de Delta, desinstala esta versión e instala el release oficial. Después de esa única migración, las actualizaciones conservarán tus datos."
+                gateExportPairingButton.visibility = View.VISIBLE
                 gateActionButton.text = "Abrir release oficial"
                 gateActionButton.isEnabled = true
             }
