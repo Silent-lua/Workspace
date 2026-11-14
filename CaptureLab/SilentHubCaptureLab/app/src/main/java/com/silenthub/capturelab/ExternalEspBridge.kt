@@ -32,6 +32,7 @@ internal data class EspRect(val left: Float, val top: Float, val right: Float, v
 internal data class EspTracer(val x1: Float, val y1: Float, val x2: Float, val y2: Float)
 internal data class EspArrow(val x: Float, val y: Float, val angle: Float)
 internal data class EspPlayer(
+    val id: String,
     val name: String,
     val distance: Int,
     val anchor: EspPoint?,
@@ -209,6 +210,7 @@ internal class LocalEspBridgeServer(
             }
             players.add(
                 EspPlayer(
+                    id = source.optString("id", source.optString("name", index.toString())).take(32),
                     name = source.optString("name", "Player").take(32),
                     distance = source.optInt("distance", 0).coerceIn(0, 9999),
                     anchor = anchor,
@@ -284,6 +286,7 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
     private val density = resources.displayMetrics.density
     private val expiryHandler = Handler(Looper.getMainLooper())
     @Volatile private var currentFrame: ExternalEspFrame? = null
+    @Volatile private var previousFrame: ExternalEspFrame? = null
     private var expiryTask: Runnable? = null
     private val labelRect = RectF()
     private val arrowPath = Path().apply {
@@ -331,9 +334,11 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
     }
 
     fun accept(frame: ExternalEspFrame) {
+        val prior = currentFrame
+        previousFrame = if (prior != null && prior.receivedAt < frame.receivedAt) prior else null
         currentFrame = frame
         expiryTask?.let(expiryHandler::removeCallbacks)
-        postInvalidate()
+        postInvalidateOnAnimation()
         lateinit var task: Runnable
         task = Runnable {
             if (currentFrame === frame) {
@@ -341,7 +346,8 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
                 if (remaining > 0L) expiryHandler.postDelayed(task, remaining)
                 else {
                     currentFrame = null
-                    postInvalidate()
+                    previousFrame = null
+                    postInvalidateOnAnimation()
                 }
             }
         }
@@ -352,17 +358,42 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val frame = currentFrame ?: return
-        if (!frame.enabled || SystemClock.elapsedRealtime() - frame.receivedAt > FRAME_TTL_MS) return
+        val now = SystemClock.elapsedRealtime()
+        val frameAgeMs = (now - frame.receivedAt).coerceAtLeast(0L)
+        if (!frame.enabled || frameAgeMs > FRAME_TTL_MS) return
         if (width <= 0 || height <= 0) return
         val screenWidth = width.toFloat()
         val screenHeight = height.toFloat()
+        val prior = previousFrame?.takeIf { it.receivedAt < frame.receivedAt }
+        val sampleDeltaMs = prior?.let { (frame.receivedAt - it.receivedAt).coerceIn(16L, 250L) } ?: 0L
+        // Predict at most 75 ms ahead between network samples. This keeps moving targets
+        // visually continuous without an unbounded extrapolation when packets stop.
+        val predictionLeadMs = frameAgeMs.coerceAtMost(MAX_PREDICTION_MS)
 
         for (player in frame.players) {
-            val box = player.box
+            val previous = prior?.players?.firstOrNull { it.id == player.id }
+            val box = player.box?.let { current ->
+                val old = previous?.box
+                if (old == null || sampleDeltaMs <= 0L) current else EspRect(
+                    predict(current.left, old.left, sampleDeltaMs, predictionLeadMs),
+                    predict(current.top, old.top, sampleDeltaMs, predictionLeadMs),
+                    predict(current.right, old.right, sampleDeltaMs, predictionLeadMs),
+                    predict(current.bottom, old.bottom, sampleDeltaMs, predictionLeadMs)
+                )
+            }
             if (frame.showLines) {
                 player.tracer?.let { line ->
-                    canvas.drawLine(line.x1 * screenWidth, line.y1 * screenHeight,
-                        line.x2 * screenWidth, line.y2 * screenHeight, tracerLine)
+                    val previousLine = previous?.tracer
+                    val x1 = if (previousLine != null && sampleDeltaMs > 0L)
+                        predict(line.x1, previousLine.x1, sampleDeltaMs, predictionLeadMs) else line.x1
+                    val y1 = if (previousLine != null && sampleDeltaMs > 0L)
+                        predict(line.y1, previousLine.y1, sampleDeltaMs, predictionLeadMs) else line.y1
+                    val x2 = if (previousLine != null && sampleDeltaMs > 0L)
+                        predict(line.x2, previousLine.x2, sampleDeltaMs, predictionLeadMs) else line.x2
+                    val y2 = if (previousLine != null && sampleDeltaMs > 0L)
+                        predict(line.y2, previousLine.y2, sampleDeltaMs, predictionLeadMs) else line.y2
+                    canvas.drawLine(x1 * screenWidth, y1 * screenHeight,
+                        x2 * screenWidth, y2 * screenHeight, tracerLine)
                 }
             }
             if (frame.glow && box != null) {
@@ -375,10 +406,17 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
             }
             if (frame.showName || frame.showDistance) {
                 val anchor = player.anchor
+                val previousAnchor = previous?.anchor
+                val predictedAnchor = if (anchor != null && previousAnchor != null && sampleDeltaMs > 0L) {
+                    EspPoint(
+                        predict(anchor.x, previousAnchor.x, sampleDeltaMs, predictionLeadMs),
+                        predict(anchor.y, previousAnchor.y, sampleDeltaMs, predictionLeadMs)
+                    )
+                } else anchor
                 val anchorX = box?.let { (it.left + it.right) * 0.5f * screenWidth }
-                    ?: anchor?.x?.times(screenWidth) ?: Float.NaN
+                    ?: predictedAnchor?.x?.times(screenWidth) ?: Float.NaN
                 val anchorY = box?.let { it.top * screenHeight }
-                    ?: anchor?.y?.times(screenHeight) ?: Float.NaN
+                    ?: predictedAnchor?.y?.times(screenHeight) ?: Float.NaN
                 if (anchorX.isFinite() && anchorY.isFinite()) {
                     val value = when {
                         frame.showName && frame.showDistance -> player.name + " · " + player.distance + "m"
@@ -388,8 +426,25 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
                     drawLabel(canvas, value, anchorX, anchorY)
                 }
             }
-            if (frame.showArrows) player.arrow?.let { drawArrow(canvas, it, screenWidth, screenHeight) }
+            if (frame.showArrows) player.arrow?.let { arrow ->
+                val previousArrow = previous?.arrow
+                val predictedArrow = if (previousArrow != null && sampleDeltaMs > 0L) {
+                    EspArrow(
+                        predict(arrow.x, previousArrow.x, sampleDeltaMs, predictionLeadMs),
+                        predict(arrow.y, previousArrow.y, sampleDeltaMs, predictionLeadMs),
+                        arrow.angle
+                    )
+                } else arrow
+                drawArrow(canvas, predictedArrow, screenWidth, screenHeight)
+            }
         }
+    }
+
+    private fun predict(current: Float, previous: Float, sampleDeltaMs: Long, leadMs: Long): Float {
+        if (sampleDeltaMs <= 0L || leadMs <= 0L) return current
+        val extrapolated = (current - previous) * (leadMs.toFloat() / sampleDeltaMs.toFloat())
+        // Limit screen-space extrapolation so abrupt teleports/respawns cannot fling the overlay.
+        return (current + extrapolated.coerceIn(-0.08f, 0.08f)).coerceIn(0f, 1f)
     }
 
     private fun drawLabel(canvas: Canvas, value: String, anchorX: Float, anchorY: Float) {
@@ -417,10 +472,12 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
         expiryTask?.let(expiryHandler::removeCallbacks)
         expiryTask = null
         currentFrame = null
+        previousFrame = null
         super.onDetachedFromWindow()
     }
 
     companion object {
-        private const val FRAME_TTL_MS = 850L
+        private const val FRAME_TTL_MS = 450L
+        private const val MAX_PREDICTION_MS = 75L
     }
 }
