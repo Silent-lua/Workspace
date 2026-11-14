@@ -407,12 +407,14 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
                         x2 * screenWidth, y2 * screenHeight, tracerLine)
                 }
             }
-            if (frame.glow && box != null) {
+            if (box != null) {
                 val left = box.left * screenWidth
                 val top = box.top * screenHeight
                 val right = box.right * screenWidth
                 val bottom = box.bottom * screenHeight
-                canvas.drawRect(left, top, right, bottom, boxGlow)
+                if (frame.glow) {
+                    canvas.drawRect(left, top, right, bottom, boxGlow)
+                }
                 canvas.drawRect(left, top, right, bottom, boxLine)
             }
             if (frame.showName || frame.showDistance) {
