@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Exact version to publish (for example 1.0.0, 1.1.0, 1.5.0, 2.0.0)"
+        required: true
+        default: "1.0.0"
+        type: string
 
 permissions:
   contents: write
@@ -48,15 +55,21 @@ jobs:
       - name: Resolve release version
         shell: bash
         run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
-            echo "Use a stable tag in the form vMAJOR.MINOR.PATCH (for example v1.0.0)." >&2
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            RELEASE_TAG="v${{ inputs.version }}"
+          else
+            RELEASE_TAG="$GITHUB_REF_NAME"
+          fi
+          if [[ ! "$RELEASE_TAG" =~ ^v([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+            echo "Use an exact stable version in the form 1.0.0, 1.1.0, 1.5.0 or 2.0.0." >&2
             exit 1
           fi
           VERSION_MAJOR="${BASH_REMATCH[1]}"
           VERSION_MINOR="${BASH_REMATCH[2]}"
           VERSION_PATCH="${BASH_REMATCH[3]}"
-          APP_VERSION_NAME="${GITHUB_REF_NAME#v}"
+          APP_VERSION_NAME="${RELEASE_TAG#v}"
           APP_VERSION_CODE=$((10#$VERSION_MAJOR * 1000000 + 10#$VERSION_MINOR * 1000 + 10#$VERSION_PATCH))
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
           if [ "$APP_VERSION_CODE" -le 5 ]; then
             echo "Release versionCode must be greater than the previous debug baseline (5)." >&2
             exit 1
@@ -88,8 +101,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: SilentHub External ESP ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: SilentHub External ${{ env.RELEASE_TAG }}
           files: |
             release-assets/SilentHub-External-ESP.apk
             release-assets/SilentHub-External-ESP.apk.sha256
