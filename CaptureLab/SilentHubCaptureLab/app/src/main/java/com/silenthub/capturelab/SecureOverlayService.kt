@@ -55,7 +55,11 @@ class SecureOverlayService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_PAUSE -> {
-                if (!prefs.getBoolean(KEY_USER_STOPPED, false)) pauseSession()
+                if (prefs.getBoolean(KEY_USER_STOPPED, false)) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                pauseSession()
                 return START_STICKY
             }
             ACTION_RESUME -> {
