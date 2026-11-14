@@ -773,6 +773,12 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             .getOrDefault(ConnectionState.DISCONNECTED)
         val detail = prefs.getString(SecureOverlayService.KEY_DETAIL, "") ?: ""
         val paused = prefs.getBoolean(SecureOverlayService.KEY_PAUSED, false)
+        val lastPlayerCount = prefs.getInt(SecureOverlayService.KEY_LAST_PLAYER_COUNT, -1)
+        val pairedSubtitle = if (lastPlayerCount >= 0) {
+            "Frame recibido · jugadores en el último frame: $lastPlayerCount."
+        } else {
+            "Primer frame recibido. La sesión está activa."
+        }
         val display = when {
             paused || state == ConnectionState.PAUSED ->
                 Triple("Paused", "La sesión está en pausa. Usa Reanudar en la notificación.", warning)
@@ -785,7 +791,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             state == ConnectionState.CONNECTED_WAITING ->
                 Triple("Connected", "Canal abierto; esperando el primer frame válido de Delta.", warning)
             state == ConnectionState.PAIRED ->
-                Triple("Paired", "Primer frame recibido. La sesión está activa.", connected)
+                Triple("Paired", pairedSubtitle, connected)
             state == ConnectionState.RECONNECTING ->
                 Triple("Reconnecting", "La conexión se interrumpió; reintentando.", warning)
             else ->
