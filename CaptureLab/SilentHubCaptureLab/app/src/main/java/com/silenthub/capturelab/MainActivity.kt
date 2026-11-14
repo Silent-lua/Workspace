@@ -59,7 +59,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private var lastProgressUiAt = 0L
 
     // Midnight graphite, cool steel and restrained champagne accents.
-    private val bg = Color.rgb(7, 10, 14)
+    private val bg = Color.BLACK
     private val panel = Color.rgb(16, 22, 29)
     private val panelRaised = Color.rgb(24, 32, 41)
     private val stroke = Color.rgb(48, 61, 73)
