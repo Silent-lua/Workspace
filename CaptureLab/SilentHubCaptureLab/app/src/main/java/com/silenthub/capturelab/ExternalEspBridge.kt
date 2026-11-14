@@ -440,6 +440,10 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
                 drawArrow(canvas, predictedArrow, screenWidth, screenHeight)
             }
         }
+
+        // Keep the overlay animating at display refresh while extrapolation is active;
+        // otherwise it would only redraw on each 25 FPS network packet.
+        if (frameAgeMs < MAX_PREDICTION_MS) postInvalidateOnAnimation()
     }
 
     private fun predict(current: Float, previous: Float, sampleDeltaMs: Long, leadMs: Long): Float {
