@@ -1,11 +1,14 @@
 package com.silenthub.capturelab
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -92,7 +95,7 @@ internal class UpdateManager(context: Context) {
         if (destination.isFile) {
             try {
                 verifyFile(destination, info)
-                verifyPackageAndSigner(destination, info)
+                verifyPackageIdentity(destination, info)
                 return destination
             } catch (_: Exception) {
                 destination.delete()
@@ -145,7 +148,7 @@ internal class UpdateManager(context: Context) {
                 }
             }
 
-            verifyPackageAndSigner(partial, info)
+            verifyPackageIdentity(partial, info)
             try {
                 Files.move(
                     partial.toPath(),
@@ -173,11 +176,78 @@ internal class UpdateManager(context: Context) {
         if (!file.isFile) return null
         return try {
             verifyFile(file, info)
-            verifyPackageAndSigner(file, info)
+            verifyPackageIdentity(file, info)
             file
         } catch (_: Exception) {
             file.delete()
             null
+        }
+    }
+
+    fun hasMatchingInstalledSigner(file: File, info: UpdateInfo): Boolean {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else PackageManager.GET_SIGNATURES
+        val archive = verifyPackageIdentity(file, info)
+        val installed = app.packageManager.getPackageInfo(app.packageName, flags)
+        return certificateDigests(installed) == certificateDigests(archive)
+    }
+
+    fun saveForManualMigration(file: File, info: UpdateInfo) {
+        require(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            "Guardar el APK directamente en Descargas requiere Android 10 o posterior."
+        }
+        verifyFile(file, info)
+        verifyPackageIdentity(file, info)
+
+        val fileName = "SilentHub-External-ESP-v" + info.versionName + ".apk"
+        val relativePath = Environment.DIRECTORY_DOWNLOADS + "/SilentHub"
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, APK_MIME_TYPE)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val resolver = app.contentResolver
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: throw IllegalStateException("Android no pudo crear el APK en Descargas.")
+
+        try {
+            val copiedBytes = FileInputStream(file).use { input ->
+                val output = resolver.openOutputStream(uri, "w")
+                    ?: throw IllegalStateException("Android no pudo escribir el APK en Descargas.")
+                output.use { input.copyTo(it, 64 * 1024) }
+            }
+            require(copiedBytes == info.sizeBytes) {
+                "La copia del APK en Descargas quedó incompleta."
+            }
+
+            val digest = MessageDigest.getInstance("SHA-256")
+            var verifiedBytes = 0L
+            resolver.openInputStream(uri)?.use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    verifiedBytes += count
+                    digest.update(buffer, 0, count)
+                }
+            } ?: throw IllegalStateException("No se pudo volver a leer el APK guardado.")
+
+            val copiedHash = digest.digest().joinToString("") { "%02x".format(it) }
+            require(verifiedBytes == info.sizeBytes && copiedHash == info.sha256) {
+                "La copia del APK en Descargas no superó la verificación SHA-256."
+            }
+
+            val publish = ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            require(resolver.update(uri, publish, null, null) == 1) {
+                "Android no pudo publicar el APK en Descargas."
+            }
+        } catch (error: Exception) {
+            resolver.delete(uri, null, null)
+            throw error
         }
     }
 
@@ -281,7 +351,7 @@ internal class UpdateManager(context: Context) {
     }
 
     @Suppress("DEPRECATION")
-    private fun verifyPackageAndSigner(file: File, info: UpdateInfo) {
+    private fun verifyPackageIdentity(file: File, info: UpdateInfo): PackageInfo {
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             PackageManager.GET_SIGNING_CERTIFICATES
         } else PackageManager.GET_SIGNATURES
@@ -291,6 +361,15 @@ internal class UpdateManager(context: Context) {
         require(packageVersionCode(archive) == info.versionCode) {
             "versionCode no coincide con el manifiesto."
         }
+        return archive
+    }
+
+    @Suppress("DEPRECATION")
+    private fun verifyPackageAndSigner(file: File, info: UpdateInfo) {
+        val archive = verifyPackageIdentity(file, info)
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else PackageManager.GET_SIGNATURES
         val installed = app.packageManager.getPackageInfo(app.packageName, flags)
         if (certificateDigests(installed) != certificateDigests(archive)) {
             throw ReleaseSignatureMismatchException()
@@ -318,5 +397,6 @@ internal class UpdateManager(context: Context) {
         private const val STALE_CACHE_MS = 24L * 60L * 60L * 1000L
         private const val MAX_APK_BYTES = 80L * 1024L * 1024L
         private const val INSTALL_REQUEST_CODE = 7505
+        private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
     }
 }
