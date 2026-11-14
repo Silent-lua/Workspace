@@ -67,12 +67,24 @@ jobs:
           VERSION_MAJOR="${BASH_REMATCH[1]}"
           VERSION_MINOR="${BASH_REMATCH[2]}"
           VERSION_PATCH="${BASH_REMATCH[3]}"
+          if [ "$VERSION_PATCH" != "0" ]; then
+            echo "SilentHub versions must use a zero patch component (for example 1.1.0 or 1.5.0)." >&2
+            exit 1
+          fi
           APP_VERSION_NAME="${RELEASE_TAG#v}"
           APP_VERSION_CODE=$((10#$VERSION_MAJOR * 1000000 + 10#$VERSION_MINOR * 1000 + 10#$VERSION_PATCH))
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
           if [ "$APP_VERSION_CODE" -le 5 ]; then
             echo "Release versionCode must be greater than the previous debug baseline (5)." >&2
             exit 1
+          fi
+          LATEST_TAG="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: SilentHub-Release-Workflow' https://api.github.com/repos/Silent-lua/Workspace/releases/latest | jq -r '.tag_name // empty' || true)"
+          if [[ "$LATEST_TAG" =~ ^v([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+            LATEST_CODE=$((10#${BASH_REMATCH[1]} * 1000000 + 10#${BASH_REMATCH[2]} * 1000 + 10#${BASH_REMATCH[3]}))
+            if [ "$APP_VERSION_CODE" -le "$LATEST_CODE" ]; then
+              echo "Version $APP_VERSION_NAME must be higher than the latest published release $LATEST_TAG." >&2
+              exit 1
+            fi
           fi
           echo "APP_VERSION_NAME=$APP_VERSION_NAME" >> "$GITHUB_ENV"
           echo "APP_VERSION_CODE=$APP_VERSION_CODE" >> "$GITHUB_ENV"
