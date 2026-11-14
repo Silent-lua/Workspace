@@ -305,6 +305,7 @@ internal class UpdateManager(context: Context) {
     }
 
     companion object {
+        internal const val KEY_REQUIRED_VERSION_CODE = "required_update_version_code"
         private const val PREFS = "silenthub_update_cache"
         private const val KEY_MANIFEST = "manifest_json"
         private const val KEY_CHECKED_AT = "checked_at"
