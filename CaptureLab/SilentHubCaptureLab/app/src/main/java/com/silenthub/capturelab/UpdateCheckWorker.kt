@@ -34,15 +34,18 @@ internal class UpdateCheckWorker(context: Context, parameters: WorkerParameters)
             }
             if (prefs.getBoolean(SecureOverlayService.KEY_RUNNING, false)) return Result.success()
 
+            val required = info.mandatory &&
+                manager.currentVersionCode() < info.minimumSupportedVersionCode
+            prefs.edit()
+                .putLong(UpdateManager.KEY_REQUIRED_VERSION_CODE, info.minimumSupportedVersionCode)
+                .putBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, required)
+                .apply()
+
             val file = manager.findVerifiedCachedFile(info) ?: manager.download(info)
             prefs.edit()
                 .putString(SecureOverlayService.KEY_PENDING_UPDATE_VERSION, info.versionName)
                 .putString(SecureOverlayService.KEY_PENDING_UPDATE_FILE, file.absolutePath)
-                .putLong(UpdateManager.KEY_REQUIRED_VERSION_CODE, info.minimumSupportedVersionCode)
-                .putBoolean(
-                    SecureOverlayService.KEY_UPDATE_MANDATORY,
-                    info.mandatory && manager.currentVersionCode() < info.minimumSupportedVersionCode
-                )
+                .putBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, required)
                 .apply()
             Result.success()
         } catch (_: ReleaseSignatureMismatchException) {
