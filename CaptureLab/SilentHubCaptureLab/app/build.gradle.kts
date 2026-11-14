@@ -14,7 +14,7 @@ val releaseKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").o
 // This keeps the actual PNG resources reproducible without committing binary blobs through the
 // GitHub text-only file editor.
 val generatedLauncherResDir = layout.buildDirectory.dir("generated/res/silenthubLauncher")
-val launcherAssetDir = layout.projectDirectory.dir("launcher-assets")
+val launcherAssetDir = layout.projectDirectory.dir("../launcher-assets")
 val generateSilentHubLauncherAssets by tasks.registering {
     inputs.dir(launcherAssetDir)
     outputs.dir(generatedLauncherResDir)
