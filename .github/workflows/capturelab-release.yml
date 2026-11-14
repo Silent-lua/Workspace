@@ -49,7 +49,7 @@ jobs:
         shell: bash
         run: |
           if [[ ! "$GITHUB_REF_NAME" =~ ^v([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
-            echo "Use a stable tag in the form vMAJOR.MINOR.PATCH (for example v0.5.1)." >&2
+            echo "Use a stable tag in the form vMAJOR.MINOR.PATCH (for example v1.0.0)." >&2
             exit 1
           fi
           VERSION_MAJOR="${BASH_REMATCH[1]}"
@@ -58,7 +58,7 @@ jobs:
           APP_VERSION_NAME="${GITHUB_REF_NAME#v}"
           APP_VERSION_CODE=$((10#$VERSION_MAJOR * 1000000 + 10#$VERSION_MINOR * 1000 + 10#$VERSION_PATCH))
           if [ "$APP_VERSION_CODE" -le 5 ]; then
-            echo "Release versionCode must be greater than the debug baseline (5)." >&2
+            echo "Release versionCode must be greater than the previous debug baseline (5)." >&2
             exit 1
           fi
           echo "APP_VERSION_NAME=$APP_VERSION_NAME" >> "$GITHUB_ENV"
