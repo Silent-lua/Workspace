@@ -141,6 +141,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             SecureOverlayService.KEY_LAST_PLAYER_COUNT,
             SecureOverlayService.KEY_AUTO_START,
             SecureOverlayService.KEY_USER_STOPPED,
+            SecureOverlayService.KEY_PAUSED,
             SecureOverlayService.KEY_INSTALL_STATUS,
             SecureOverlayService.KEY_INSTALL_ERROR,
             SecureOverlayService.KEY_UPDATE_MANDATORY,
@@ -610,7 +611,8 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         val autoStart = prefs.getBoolean(SecureOverlayService.KEY_AUTO_START, false)
         val userStopped = prefs.getBoolean(SecureOverlayService.KEY_USER_STOPPED, false)
         val updateRequired = prefs.getBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, false)
-        if (!autoStart || userStopped || updateRequired || !hasOverlayPermission()) return
+        val paused = prefs.getBoolean(SecureOverlayService.KEY_PAUSED, false)
+        if (!autoStart || userStopped || updateRequired || paused || !hasOverlayPermission()) return
         if (!prefs.getBoolean(SecureOverlayService.KEY_RUNNING, false)) {
             startReceiver(userInitiated = false)
         }
@@ -725,6 +727,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         }
         prefs.edit()
             .putBoolean(SecureOverlayService.KEY_USER_STOPPED, false)
+            .putBoolean(SecureOverlayService.KEY_PAUSED, false)
             .putBoolean(SecureOverlayService.KEY_AUTO_START, true)
             .putString(SecureOverlayService.KEY_CONNECTION_STATE, ConnectionState.CONNECTING.name)
             .apply()
@@ -748,6 +751,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                 .putBoolean(SecureOverlayService.KEY_AUTO_START, false)
                 .apply()
         }
+        prefs.edit().putBoolean(SecureOverlayService.KEY_PAUSED, false).apply()
         stopService(Intent(this, SecureOverlayService::class.java))
         prefs.edit()
             .putBoolean(SecureOverlayService.KEY_RUNNING, false)
@@ -768,9 +772,12 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         val state = runCatching { ConnectionState.valueOf(raw) }
             .getOrDefault(ConnectionState.DISCONNECTED)
         val detail = prefs.getString(SecureOverlayService.KEY_DETAIL, "") ?: ""
+        val paused = prefs.getBoolean(SecureOverlayService.KEY_PAUSED, false)
         val display = when {
+            paused || state == ConnectionState.PAUSED ->
+                Triple("Paused", "La sesión está en pausa. Usa Reanudar en la notificación.", warning)
             !running || state == ConnectionState.DISCONNECTED ->
-                Triple("Disconnected", "El receptor está detenido.", muted)
+                Triple("Disconnected", "El receptor está detenido. Pulsa Start para activarlo manualmente.", muted)
             state == ConnectionState.DETECTING ->
                 Triple("Detecting", "Esperando la primera transmisión de Delta.", secondary)
             state == ConnectionState.CONNECTING ->
@@ -788,8 +795,9 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         stateSubtitle.text = display.second
         stateDot.background = oval(display.third)
         updateStatusPulse(running && state == ConnectionState.PAIRED)
-        startButton.isEnabled = !running && !mandatoryGate
-        stopButton.isEnabled = running
+        val sessionActive = running || paused
+        startButton.isEnabled = !sessionActive && !mandatoryGate
+        stopButton.isEnabled = sessionActive
         startButton.alpha = if (startButton.isEnabled) 1f else 0.45f
         stopButton.alpha = if (stopButton.isEnabled) 1f else 0.45f
     }

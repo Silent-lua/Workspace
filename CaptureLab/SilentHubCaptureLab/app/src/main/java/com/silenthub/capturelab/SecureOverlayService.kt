@@ -40,16 +40,35 @@ class SecureOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .putBoolean(KEY_USER_STOPPED, true)
-                .putBoolean(KEY_AUTO_START, false)
-                .apply()
-            stopSelf()
-            return START_NOT_STICKY
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+
+        when (intent?.action) {
+            ACTION_STOP -> {
+                prefs.edit()
+                    .putBoolean(KEY_USER_STOPPED, true)
+                    .putBoolean(KEY_AUTO_START, false)
+                    .putBoolean(KEY_PAUSED, false)
+                    .putBoolean(KEY_RUNNING, false)
+                    .putBoolean(KEY_BRIDGE, false)
+                    .apply()
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_PAUSE -> {
+                if (!prefs.getBoolean(KEY_USER_STOPPED, false)) pauseSession()
+                return START_STICKY
+            }
+            ACTION_RESUME -> {
+                if (prefs.getBoolean(KEY_USER_STOPPED, false)) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                startAsForegroundService()
+                resumeSession()
+                return START_STICKY
+            }
         }
 
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         if (intent == null && (!prefs.getBoolean(KEY_AUTO_START, false) ||
                 prefs.getBoolean(KEY_USER_STOPPED, false))) {
             stopSelf()
@@ -64,13 +83,21 @@ class SecureOverlayService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        if (prefs.getBoolean(KEY_PAUSED, false)) {
+            startAsForegroundService()
+            setConnectionState(ConnectionState.PAUSED, "paused_by_user")
+            return START_STICKY
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             setConnectionState(ConnectionState.CONNECTION_FAILED, "overlay_permission_missing")
             stopSelf()
             return START_NOT_STICKY
         }
 
-        prefs.edit().putBoolean(KEY_AUTO_START, true).apply()
+        prefs.edit()
+            .putBoolean(KEY_AUTO_START, true)
+            .putBoolean(KEY_PAUSED, false)
+            .apply()
         startAsForegroundService()
         if (overlayView == null && !showSecureOverlay()) {
             stopSelf()
@@ -78,6 +105,69 @@ class SecureOverlayService : Service() {
         }
         if (realtimeReceiver == null) startRealtimeReceiver()
         return START_STICKY
+    }
+
+    private fun pauseSession() {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_PAUSED, false)) {
+            updateForegroundNotification()
+            return
+        }
+
+        mainHandler.removeCallbacks(staleFrameRunnable)
+        realtimeReceiver?.close()
+        realtimeReceiver = null
+        overlayView?.let { view ->
+            try { windowManager?.removeView(view) } catch (_: IllegalArgumentException) { }
+        }
+        overlayView = null
+        lastFrameElapsed = 0L
+
+        prefs.edit()
+            .putBoolean(KEY_PAUSED, true)
+            .putBoolean(KEY_RUNNING, false)
+            .putBoolean(KEY_BRIDGE, false)
+            .apply()
+        setConnectionState(ConnectionState.PAUSED, "paused_by_user")
+        updateForegroundNotification()
+    }
+
+    private fun resumeSession(): Boolean {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_USER_STOPPED, false)) return false
+        if (prefs.getBoolean(KEY_UPDATE_MANDATORY, false)) {
+            setConnectionState(ConnectionState.CONNECTION_FAILED, "mandatory_update_required")
+            updateForegroundNotification()
+            return false
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            setConnectionState(ConnectionState.CONNECTION_FAILED, "overlay_permission_missing")
+            updateForegroundNotification()
+            return false
+        }
+
+        prefs.edit()
+            .putBoolean(KEY_PAUSED, false)
+            .putBoolean(KEY_AUTO_START, true)
+            .apply()
+
+        if (overlayView == null && !showSecureOverlay()) {
+            prefs.edit()
+                .putBoolean(KEY_PAUSED, true)
+                .putBoolean(KEY_RUNNING, false)
+                .putBoolean(KEY_BRIDGE, false)
+                .apply()
+            updateForegroundNotification()
+            return false
+        }
+        if (realtimeReceiver == null) startRealtimeReceiver()
+        updateForegroundNotification()
+        return true
+    }
+
+    private fun updateForegroundNotification() {
+        getSystemService(NotificationManager::class.java)
+            ?.notify(NOTIFICATION_ID, buildNotification())
     }
 
     private fun showSecureOverlay(): Boolean {
@@ -184,6 +274,15 @@ class SecureOverlayService : Service() {
             this, 10, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val paused = prefs.getBoolean(KEY_PAUSED, false)
+        val sessionIntent = Intent(this, SecureOverlayService::class.java).apply {
+            action = if (paused) ACTION_RESUME else ACTION_PAUSE
+        }
+        val sessionPending = PendingIntent.getService(
+            this, if (paused) 12 else 13, sessionIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val stopIntent = Intent(this, SecureOverlayService::class.java).apply { action = ACTION_STOP }
         val stopPending = PendingIntent.getService(
             this, 11, stopIntent,
@@ -197,10 +296,17 @@ class SecureOverlayService : Service() {
         }
         return builder
             .setContentTitle("SilentHub External ESP")
-            .setContentText("Vercel relay · Supabase Realtime")
+            .setContentText(if (paused) "Sesión pausada · reanuda cuando estés listo."
+                else "Vercel relay · Supabase Realtime")
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setContentIntent(openPending)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .addAction(
+                if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,
+                if (paused) "Reanudar" else "Pausar",
+                sessionPending
+            )
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Detener", stopPending)
             .build()
     }
@@ -241,6 +347,7 @@ class SecureOverlayService : Service() {
         const val KEY_DETAIL = "state_detail"
         const val KEY_AUTO_START = "auto_start_enabled"
         const val KEY_USER_STOPPED = "user_stopped"
+        const val KEY_PAUSED = "session_paused"
         const val KEY_CONNECTION_STATE = "connection_state"
         const val KEY_LAST_FRAME = "last_frame_at"
         const val KEY_LAST_PLAYER_COUNT = "last_player_count"
@@ -252,6 +359,8 @@ class SecureOverlayService : Service() {
         private const val CHANNEL_ID = "silent_hub_external_esp_v5"
         private const val NOTIFICATION_ID = 4112
         private const val ACTION_STOP = "com.silenthub.capturelab.STOP_EXTERNAL_ESP"
+        private const val ACTION_PAUSE = "com.silenthub.capturelab.PAUSE_EXTERNAL_ESP"
+        private const val ACTION_RESUME = "com.silenthub.capturelab.RESUME_EXTERNAL_ESP"
         private const val FRAME_STALE_MS = 2_500L
         private const val FRAME_HEALTH_PERSIST_MS = 5_000L
     }
