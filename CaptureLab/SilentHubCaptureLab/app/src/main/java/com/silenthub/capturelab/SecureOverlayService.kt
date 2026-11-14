@@ -276,11 +276,14 @@ class SecureOverlayService : Service() {
         )
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         val paused = prefs.getBoolean(KEY_PAUSED, false)
-        val sessionIntent = Intent(this, SecureOverlayService::class.java).apply {
-            action = if (paused) ACTION_RESUME else ACTION_PAUSE
-        }
-        val sessionPending = PendingIntent.getService(
-            this, if (paused) 12 else 13, sessionIntent,
+        val pausePending = PendingIntent.getService(
+            this, 12,
+            Intent(this, SecureOverlayService::class.java).apply { action = ACTION_PAUSE },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val resumePending = PendingIntent.getService(
+            this, 13,
+            Intent(this, SecureOverlayService::class.java).apply { action = ACTION_RESUME },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val stopIntent = Intent(this, SecureOverlayService::class.java).apply { action = ACTION_STOP }
@@ -302,11 +305,8 @@ class SecureOverlayService : Service() {
             .setContentIntent(openPending)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .addAction(
-                if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,
-                if (paused) "Reanudar" else "Pausar",
-                sessionPending
-            )
+            .addAction(android.R.drawable.ic_media_pause, "Pausar", pausePending)
+            .addAction(android.R.drawable.ic_media_play, "Reanudar", resumePending)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Detener", stopPending)
             .build()
     }
