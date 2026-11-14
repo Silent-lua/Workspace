@@ -1,5 +1,3 @@
-import java.util.Base64
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -10,32 +8,7 @@ val releaseStorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSW
 val releaseAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
 val releaseKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull
 
-// Decode the repository's text-encoded launcher artwork into generated Android resources.
-// This keeps the actual PNG resources reproducible without committing binary blobs through the
-// GitHub text-only file editor.
-val generatedLauncherResDir = layout.buildDirectory.dir("generated/res/silenthubLauncher")
-val launcherAssetDir = layout.projectDirectory.dir("../launcher-assets")
-val generateSilentHubLauncherAssets by tasks.registering {
-    inputs.dir(launcherAssetDir)
-    outputs.dir(generatedLauncherResDir)
-    doLast {
-        val output = generatedLauncherResDir.get().dir("mipmap-nodpi").asFile
-        output.mkdirs()
-        val decoder = Base64.getMimeDecoder()
-        val foreground = launcherAssetDir.file("silenthub_adaptive_foreground.png.b64").asFile
-            .readText().trim()
-        val legacy = launcherAssetDir.file("silenthub_legacy_icon.png.b64").asFile
-            .readText().trim()
-        output.resolve("ic_launcher_foreground.png")
-            .writeBytes(decoder.decode(foreground))
-        output.resolve("ic_launcher.png")
-            .writeBytes(decoder.decode(legacy))
-    }
-}
-
 android {
-    sourceSets.getByName("main").res.srcDir(generatedLauncherResDir)
-
     namespace = "com.silenthub.capturelab"
     compileSdk = 35
 
@@ -82,10 +55,6 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
-}
-
-tasks.named("preBuild").configure {
-    dependsOn(generateSilentHubLauncherAssets)
 }
 
 dependencies {
