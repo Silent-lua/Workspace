@@ -96,7 +96,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         buildScreen()
         UpdateWorkScheduler.ensureScheduled(this)
         applyMandatoryGate()
-        checkForUpdate(force = false)
+        checkForUpdate(force = true)
     }
 
     override fun onStart() {
@@ -120,7 +120,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         refreshConnectionState()
         if (!updateCheckInFlight && !downloadInFlight &&
             !prefs.getBoolean(SecureOverlayService.KEY_RUNNING, false)) {
-            checkForUpdate(force = false)
+            checkForUpdate(force = true)
         }
         renderInstallStatus()
     }
