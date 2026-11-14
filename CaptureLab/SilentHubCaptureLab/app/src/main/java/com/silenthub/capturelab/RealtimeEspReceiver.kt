@@ -132,7 +132,9 @@ internal class SupabaseRealtimeEspReceiver(
                             broadcast.optString("event") != "frame") return
                         val frameJson = broadcast.optJSONObject("payload") ?: return
                         val sequence = frameJson.optLong("sequence", -1L)
-                        if (sequence < 0 || sequence == lastSequence) return
+                        // Ignore duplicates and out-of-order frames; the publisher uses
+                        // a wall-clock sequence base so executor restarts remain monotonic.
+                        if (sequence < 0 || sequence <= lastSequence) return
                         val frame = parseFrame(frameJson)
                         lastSequence = sequence
                         onFrame(frame)
@@ -194,6 +196,7 @@ internal class SupabaseRealtimeEspReceiver(
             }
             players.add(
                 EspPlayer(
+                    id = source.optString("id", source.optString("name", index.toString())).take(32),
                     name = source.optString("name", "Player").take(32),
                     distance = source.optInt("distance", 0).coerceIn(0, 9999),
                     anchor = anchor,
