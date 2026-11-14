@@ -1,6 +1,11 @@
 package com.silenthub.capturelab
 
 import android.Manifest
+import android.animation.ValueAnimator
+import android.content.res.ColorStateList
+import android.graphics.drawable.RippleDrawable
+import android.graphics.drawable.Drawable
+import android.view.animation.DecelerateInterpolator
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipDescription
@@ -53,17 +58,20 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private var mandatoryGate = false
     private var lastProgressUiAt = 0L
 
-    private val bg = Color.rgb(8, 9, 11)
-    private val panel = Color.rgb(18, 20, 23)
-    private val panelRaised = Color.rgb(25, 28, 32)
-    private val stroke = Color.rgb(47, 51, 57)
-    private val primary = Color.rgb(241, 243, 245)
-    private val secondary = Color.rgb(172, 179, 187)
-    private val muted = Color.rgb(112, 120, 130)
-    private val gold = Color.rgb(190, 160, 105)
-    private val connected = Color.rgb(126, 183, 150)
-    private val warning = Color.rgb(195, 160, 103)
-    private val errorColor = Color.rgb(195, 112, 108)
+    // Midnight graphite, cool steel and restrained champagne accents.
+    private val bg = Color.rgb(7, 10, 14)
+    private val panel = Color.rgb(16, 22, 29)
+    private val panelRaised = Color.rgb(24, 32, 41)
+    private val stroke = Color.rgb(48, 61, 73)
+    private val primary = Color.rgb(241, 245, 248)
+    private val secondary = Color.rgb(177, 190, 200)
+    private val muted = Color.rgb(126, 142, 154)
+    private val gold = Color.rgb(195, 163, 111)
+    private val goldLight = Color.rgb(229, 205, 160)
+    private val connected = Color.rgb(113, 194, 151)
+    private val warning = Color.rgb(218, 174, 105)
+    private val errorColor = Color.rgb(214, 123, 123)
+    private var statusPulse: ValueAnimator? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -90,6 +98,8 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
 
     override fun onStop() {
         prefs.unregisterOnSharedPreferenceChangeListener(this)
+        statusPulse?.cancel()
+        statusPulse = null
         super.onStop()
     }
 
@@ -104,6 +114,8 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     override fun onDestroy() {
+        statusPulse?.cancel()
+        statusPulse = null
         io.shutdown()
         super.onDestroy()
     }
@@ -129,160 +141,306 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
 
     private fun buildScreen() {
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(bg)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.rgb(12, 17, 23), bg, Color.rgb(5, 8, 12))
+            )
             isFillViewport = true
             clipToPadding = false
-            setPadding(dp(20), dp(24), dp(20), dp(32))
+            setPadding(dp(18), dp(18), dp(18), dp(28))
+            // Target 35 is edge-to-edge on recent Android versions. Keep all controls
+            // clear of status/navigation bars without relying on a fixed device size.
+            setOnApplyWindowInsetsListener { view, insets ->
+                view.setPadding(
+                    dp(18) + insets.systemWindowInsetLeft,
+                    dp(18) + insets.systemWindowInsetTop,
+                    dp(18) + insets.systemWindowInsetRight,
+                    dp(28) + insets.systemWindowInsetBottom
+                )
+                insets
+            }
         }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.TRANSPARENT)
         }
 
+        // Brand bar
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val mark = TextView(this).apply {
             text = "S"
-            textSize = 18f
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setTextColor(gold)
+            textSize = 21f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            setTextColor(goldLight)
             gravity = Gravity.CENTER
-            background = rounded(panelRaised, dp(10), stroke)
-            layoutParams = LinearLayout.LayoutParams(dp(42), dp(42))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(42, 53, 63), Color.rgb(17, 24, 32))
+            ).apply {
+                cornerRadius = dp(14).toFloat()
+                setStroke(dp(1), Color.rgb(94, 111, 124))
+            }
+            elevation = dp(3).toFloat()
+            layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
+            contentDescription = "SilentHub"
         }
         val brand = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), 0, 0, 0)
-            addView(label("SILENTHUB", 11f, secondary, true).apply { letterSpacing = 0.18f })
-            addView(label("EXTERNAL", 9f, muted, true).apply { letterSpacing = 0.2f })
+            addView(label("SILENTHUB", 12f, primary, true).apply { letterSpacing = 0.19f })
+            addView(label("EXTERNAL SYSTEMS", 9f, muted, true).apply {
+                letterSpacing = 0.14f
+                setPadding(0, dp(3), 0, 0)
+            })
         }
         header.addView(mark)
         header.addView(brand)
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        header.addView(label("v" + installedVersionName(), 11f, muted, false))
+        val versionPill = label("v" + installedVersionName(), 10f, goldLight, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = pillBackground(Color.rgb(35, 41, 45), Color.rgb(91, 78, 58))
+        }
+        header.addView(versionPill)
         content.addView(header)
 
-        content.addView(label("Capture companion", 25f, primary, true), topMargin(dp(30)))
-        content.addView(label(
-            "Secure overlay  ·  Remote pairing  ·  Background receiver",
-            12f, muted, false
-        ), topMargin(dp(5)))
+        // Hero panel
+        val hero = card(hero = true)
+        hero.addView(label("FIELD CONSOLE   /   ANDROID CLIENT", 9f, goldLight, true).apply {
+            letterSpacing = 0.16f
+        })
+        hero.addView(label("External ESP", 29f, primary, true), topMargin(dp(10)))
+        hero.addView(label(
+            "A secure, low-latency companion for your Delta ESP session.",
+            13f, secondary, false
+        ), topMargin(dp(6)))
+        val heroRule = View(this).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(gold, Color.rgb(93, 112, 125), Color.TRANSPARENT)
+            )
+            layoutParams = LinearLayout.LayoutParams(dp(94), dp(2))
+        }
+        hero.addView(heroRule, topMargin(dp(18)))
+        val secureChip = label("◆  SECURE CHANNEL  ·  PRIVATE PAIRING", 9f, secondary, true).apply {
+            letterSpacing = 0.07f
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = pillBackground(Color.rgb(22, 31, 39), stroke)
+        }
+        hero.addView(secureChip, topMargin(dp(14)))
+        content.addView(hero, topMargin(dp(24)))
 
+        // Live connection state
+        content.addView(sectionHeader("SESSION", "Live connection status"), topMargin(dp(24)))
         val stateCard = card()
-        val stateRow = LinearLayout(this).apply {
+        val stateHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         stateDot = View(this).apply {
             background = oval(muted)
-            layoutParams = LinearLayout.LayoutParams(dp(8), dp(8))
+            layoutParams = LinearLayout.LayoutParams(dp(10), dp(10))
+            contentDescription = "Connection status indicator"
         }
         val stateText = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), 0, 0, 0)
         }
-        stateTitle = label("Disconnected", 15f, primary, true)
+        stateTitle = label("Disconnected", 17f, primary, true)
         stateSubtitle = label("El receptor está detenido.", 12f, muted, false).apply {
             setPadding(0, dp(4), 0, 0)
         }
         stateText.addView(stateTitle)
         stateText.addView(stateSubtitle)
-        stateRow.addView(stateDot)
-        stateRow.addView(stateText)
-        stateCard.addView(stateRow)
-        content.addView(stateCard, topMargin(dp(24)))
+        stateHeader.addView(stateDot)
+        stateHeader.addView(stateText)
+        stateCard.addView(stateHeader)
+        val stateDivider = View(this).apply {
+            setBackgroundColor(stroke)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(1)
+            )
+        }
+        stateCard.addView(stateDivider, topMargin(dp(14)))
+        stateCard.addView(label(
+            "The link is considered paired only after the first valid ESP frame arrives.",
+            11f, muted, false
+        ), topMargin(dp(11)))
+        content.addView(stateCard, topMargin(dp(10)))
 
-        content.addView(section("PAIRING"), topMargin(dp(26)))
+        // Pairing
+        content.addView(sectionHeader("PAIRING", "Device identity and access"), topMargin(dp(24)))
         val pairCard = card()
-        pairCard.addView(label("Código de emparejamiento", 14f, primary, true))
+        pairCard.addView(label("PAIRING TOKEN", 10f, goldLight, true).apply {
+            letterSpacing = 0.13f
+        })
         pairCard.addView(label(
-            "Cópialo una vez en Delta. Paired se confirma al recibir el primer frame válido.",
+            "Copy this code once into Delta. Keep it private; anyone with the code can publish to your channel.",
             12f, muted, false
-        ), topMargin(dp(5)))
-        pairingValue = label(maskedToken(), 13f, secondary, true).apply {
-            typeface = Typeface.create("monospace", Typeface.NORMAL)
-            letterSpacing = 0.06f
-            setPadding(dp(12), dp(13), dp(12), dp(13))
-            background = rounded(panelRaised, dp(8), stroke)
+        ), topMargin(dp(7)))
+        pairingValue = label(maskedToken(), 13f, primary, true).apply {
+            typeface = Typeface.create("monospace", Typeface.BOLD)
+            letterSpacing = 0.04f
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(15), dp(14), dp(15))
+            background = roundedGradient(
+                intArrayOf(Color.rgb(10, 16, 22), Color.rgb(20, 28, 36)),
+                dp(10), stroke
+            )
+            minHeight = dp(52)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
         }
-        pairCard.addView(pairingValue, topMargin(dp(12)))
-        val pairButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        revealButton = textAction("Revelar") {
+        pairCard.addView(pairingValue, topMargin(dp(14)))
+        val pairButtons = LinearLayout(this).apply {
+            orientation = if (resources.configuration.screenWidthDp < 360)
+                LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        revealButton = textAction("Reveal code") {
             pairingRevealed = !pairingRevealed
             refreshPairingToken()
+        }.apply {
+            gravity = Gravity.CENTER
+            minHeight = dp(48)
+            background = rippleBackground(panelRaised, stroke, dp(10))
         }
-        val copyButton = actionButton("Copiar código", true) { copyToken() }
-        pairButtons.addView(revealButton, LinearLayout.LayoutParams(0, dp(44), 1f))
-        pairButtons.addView(copyButton, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-            leftMargin = dp(8)
-        })
-        pairCard.addView(pairButtons, topMargin(dp(10)))
-        pairCard.addView(textAction("Restaurar código guardado") { importPairingToken() }, topMargin(dp(7)))
-        pairCard.addView(textAction("Regenerar código de acceso") { confirmTokenRotation() }, topMargin(dp(7)))
+        val copyButton = actionButton("Copy token", true) { copyToken() }
+        if (pairButtons.orientation == LinearLayout.VERTICAL) {
+            pairButtons.addView(copyButton, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
+            ))
+            pairButtons.addView(revealButton, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
+            ).apply { topMargin = dp(8) })
+        } else {
+            pairButtons.addView(revealButton, LinearLayout.LayoutParams(0, dp(48), 0.85f))
+            pairButtons.addView(copyButton, LinearLayout.LayoutParams(0, dp(48), 1.15f).apply {
+                leftMargin = dp(8)
+            })
+        }
+        pairCard.addView(pairButtons, topMargin(dp(12)))
+        pairCard.addView(textAction("Restore saved pairing code") { importPairingToken() }, topMargin(dp(12)))
+        pairCard.addView(textAction("Rotate access token") { confirmTokenRotation() }, topMargin(dp(2)))
         content.addView(pairCard, topMargin(dp(10)))
 
-        content.addView(section("RECEIVER"), topMargin(dp(26)))
-        val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        startButton = actionButton("Iniciar receptor", true) { startReceiver(userInitiated = true) }
-        stopButton = actionButton("Detener", false) { stopReceiver(userInitiated = true) }
-        controls.addView(startButton, LinearLayout.LayoutParams(0, dp(48), 1f))
-        controls.addView(stopButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
-            leftMargin = dp(8)
+        // Receiver controls
+        content.addView(sectionHeader("RECEIVER", "Secure overlay controls"), topMargin(dp(24)))
+        val receiverCard = card()
+        receiverCard.addView(label("ESP SESSION", 10f, goldLight, true).apply {
+            letterSpacing = 0.13f
         })
-        content.addView(controls, topMargin(dp(10)))
-        content.addView(label(
-            "El servicio permanece activo con una notificación del sistema. Detenerlo aquí o desde la notificación desactiva la reanudación automática.",
+        receiverCard.addView(label(
+            "Start the protected foreground service to receive frames and render the overlay.",
+            12f, muted, false
+        ), topMargin(dp(6)))
+        val controls = LinearLayout(this).apply {
+            orientation = if (resources.configuration.screenWidthDp < 360)
+                LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        }
+        startButton = actionButton("Start receiver", true) { startReceiver(userInitiated = true) }
+        stopButton = actionButton("Stop session", false) { stopReceiver(userInitiated = true) }
+        if (controls.orientation == LinearLayout.VERTICAL) {
+            controls.addView(startButton, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(50)
+            ))
+            controls.addView(stopButton, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(50)
+            ).apply { topMargin = dp(8) })
+        } else {
+            controls.addView(startButton, LinearLayout.LayoutParams(0, dp(50), 1f))
+            controls.addView(stopButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply {
+                leftMargin = dp(9)
+            })
+        }
+        receiverCard.addView(controls, topMargin(dp(15)))
+        receiverCard.addView(label(
+            "A persistent Android notification remains visible while the receiver is active. Stopping it disables automatic resume.",
             11f, muted, false
-        ), topMargin(dp(8)))
+        ), topMargin(dp(11)))
+        content.addView(receiverCard, topMargin(dp(10)))
 
-        content.addView(section("UPDATES"), topMargin(dp(26)))
+        // Updates
+        content.addView(sectionHeader("SOFTWARE", "Verified update channel"), topMargin(dp(24)))
         val updateCard = card()
-        updateTitle = label("Actualizaciones automáticas", 14f, primary, true)
+        val updateTop = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val updateHeading = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(label("UPDATE MANAGER", 10f, goldLight, true).apply {
+                letterSpacing = 0.12f
+            })
+            updateTitle = label("Automatic updates", 16f, primary, true)
+            addView(updateTitle, topMargin(dp(5)))
+        }
+        updateTop.addView(updateHeading, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val verified = label("SHA-256", 9f, secondary, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(9), dp(7), dp(9), dp(7))
+            background = pillBackground(Color.rgb(24, 36, 38), Color.rgb(56, 91, 83))
+        }
+        updateTop.addView(verified)
+        updateCard.addView(updateTop)
         updateSubtitle = label("Consultando el manifiesto de publicación…", 12f, muted, false)
+        updateCard.addView(updateSubtitle, topMargin(dp(8)))
         updateProgress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
             progress = 0
             visibility = View.GONE
-            progressTintList = android.content.res.ColorStateList.valueOf(gold)
-            progressBackgroundTintList = android.content.res.ColorStateList.valueOf(stroke)
+            progressTintList = ColorStateList.valueOf(gold)
+            progressBackgroundTintList = ColorStateList.valueOf(stroke)
         }
-        updateButton = actionButton("Buscar actualizaciones", false) { checkForUpdate(force = true) }
-        updateCard.addView(updateTitle)
-        updateCard.addView(updateSubtitle, topMargin(dp(5)))
-        updateCard.addView(updateProgress, topMargin(dp(12)))
-        updateCard.addView(updateButton, topMargin(dp(12)))
+        updateCard.addView(updateProgress, topMargin(dp(14)))
+        updateButton = actionButton("Check for updates", false) { checkForUpdate(force = true) }
+        updateCard.addView(updateButton, topMargin(dp(14)))
         content.addView(updateCard, topMargin(dp(10)))
 
-        content.addView(section("ENGINEERING"), topMargin(dp(26)))
+        // Engineering note
+        content.addView(sectionHeader("SYSTEM", "Capture-safe by design"), topMargin(dp(24)))
         val note = card()
-        note.addView(label("Capture-safe rendering", 14f, primary, true))
+        note.addView(label("RENDER PIPELINE", 10f, goldLight, true).apply {
+            letterSpacing = 0.13f
+        })
+        note.addView(label("Event-driven rendering", 16f, primary, true), topMargin(dp(6)))
         note.addView(label(
-            "FLAG_SECURE se conserva. El Canvas invalida al llegar un frame y al vencer su tiempo de vida; no mantiene un bucle de refresco cuando no hay datos.",
-            12f, muted, false
-        ), topMargin(dp(6)))
+            "FLAG_SECURE stays enabled. The Canvas redraws on new frames and once on expiry, without an idle refresh loop.",
+            12f, secondary, false
+        ), topMargin(dp(7)))
+        val noteDivider = View(this).apply {
+            setBackgroundColor(stroke)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(1)
+            )
+        }
+        note.addView(noteDivider, topMargin(dp(14)))
         note.addView(label(
-            "Las actualizaciones se descargan y verifican fuera del hilo principal. Android muestra su propio diálogo de instalación.",
-            12f, muted, false
-        ), topMargin(dp(10)))
+            "Downloads, integrity checks and package preparation run away from the main thread. Android retains final installation approval.",
+            11f, muted, false
+        ), topMargin(dp(12)))
         content.addView(note, topMargin(dp(10)))
 
         content.addView(label(
-            "SILENTHUB  ·  ENGINEERING BUILD",
+            "SILENTHUB  /  ENGINEERING EDITION",
             9f, muted, true
         ).apply {
             gravity = Gravity.CENTER
-            letterSpacing = 0.16f
-        }, topMargin(dp(30)))
+            letterSpacing = 0.18f
+            setPadding(0, dp(16), 0, dp(8))
+        }, topMargin(dp(24)))
 
         scroll.addView(content)
         setContentView(scroll)
+        scroll.requestApplyInsets()
         refreshPairingToken()
         refreshConnectionState()
         renderInstallStatus()
+        animateEntrance(content)
     }
 
     private fun restoreReceiverWhenAppropriate() {
@@ -466,6 +624,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         stateTitle.text = display.first
         stateSubtitle.text = display.second
         stateDot.background = oval(display.third)
+        updateStatusPulse(running && state == ConnectionState.PAIRED)
         startButton.isEnabled = !running && !mandatoryGate
         stopButton.isEnabled = running
         startButton.alpha = if (startButton.isEnabled) 1f else 0.45f
@@ -679,10 +838,65 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     private fun maybeAnimate(view: View) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            android.animation.ValueAnimator.areAnimatorsEnabled()) {
-            view.alpha = 0.72f
-            view.animate().alpha(1f).setDuration(140L).start()
+        if (!ValueAnimator.areAnimatorsEnabled()) return
+        view.animate().cancel()
+        view.animate()
+            .scaleX(0.985f)
+            .scaleY(0.985f)
+            .setDuration(75L)
+            .withEndAction {
+                view.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(130L)
+                    .setInterpolator(DecelerateInterpolator())
+                    .start()
+            }
+            .start()
+    }
+
+    private fun animateEntrance(container: ViewGroup) {
+        val enabled = ValueAnimator.areAnimatorsEnabled()
+        for (index in 0 until container.childCount) {
+            val child = container.getChildAt(index)
+            if (!enabled) {
+                child.alpha = 1f
+                child.translationY = 0f
+                continue
+            }
+            child.alpha = 0f
+            child.translationY = dp(12).toFloat()
+            child.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setStartDelay(index * 24L)
+                .setDuration(330L)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        }
+    }
+
+    private fun updateStatusPulse(active: Boolean) {
+        statusPulse?.cancel()
+        statusPulse = null
+        stateDot.scaleX = 1f
+        stateDot.scaleY = 1f
+        stateDot.alpha = 1f
+        if (!active || !ValueAnimator.areAnimatorsEnabled() || !lifecycle.currentState.isAtLeast(
+                androidx.lifecycle.Lifecycle.State.STARTED
+            )) return
+
+        statusPulse = ValueAnimator.ofFloat(1f, 1.22f).apply {
+            duration = 1050L
+            repeatMode = ValueAnimator.REVERSE
+            repeatCount = ValueAnimator.INFINITE
+            addUpdateListener { animation ->
+                val scale = animation.animatedValue as Float
+                stateDot.scaleX = scale
+                stateDot.scaleY = scale
+                stateDot.alpha = 1.45f - (scale * 0.36f)
+            }
+            start()
         }
     }
 
@@ -690,15 +904,42 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         packageManager.getPackageInfo(packageName, 0).versionName ?: "0.5.0"
     }.getOrDefault("0.5.0")
 
-    private fun card() = LinearLayout(this).apply {
+    private fun card(hero: Boolean = false) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = rounded(panel, dp(12), stroke)
+        setPadding(dp(17), dp(17), dp(17), dp(17))
+        background = roundedGradient(
+            if (hero) intArrayOf(Color.rgb(30, 40, 49), Color.rgb(17, 25, 33))
+            else intArrayOf(Color.rgb(24, 32, 41), panel),
+            dp(if (hero) 18 else 15),
+            if (hero) Color.rgb(76, 91, 102) else stroke
+        )
+        elevation = dp(if (hero) 5 else 2).toFloat()
+        clipToPadding = false
+        clipChildren = false
     }
 
-    private fun section(value: String) = label(value, 10f, gold, true).apply {
-        letterSpacing = 0.18f
-    }
+    private fun sectionHeader(title: String, subtitle: String) =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val marker = View(this@MainActivity).apply {
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    intArrayOf(goldLight, gold)
+                ).apply { cornerRadius = dp(2).toFloat() }
+                layoutParams = LinearLayout.LayoutParams(dp(3), dp(28))
+            }
+            val labels = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(11), 0, 0, 0)
+                addView(label(title, 10f, goldLight, true).apply { letterSpacing = 0.16f })
+                addView(label(subtitle, 11f, muted, false).apply {
+                    setPadding(0, dp(3), 0, 0)
+                })
+            }
+            addView(marker)
+            addView(labels)
+        }
 
     private fun label(value: String, size: Float, color: Int, medium: Boolean) =
         TextView(this).apply {
@@ -707,18 +948,26 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             setTextColor(color)
             if (medium) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setLineSpacing(dp(2).toFloat(), 1f)
+            includeFontPadding = true
         }
 
     private fun actionButton(value: String, emphasized: Boolean, action: () -> Unit) =
         Button(this).apply {
             text = value
-            textSize = 13f
+            textSize = 12f
             isAllCaps = false
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setTextColor(if (emphasized) bg else secondary)
-            background = rounded(if (emphasized) gold else panelRaised, dp(8), if (emphasized) gold else stroke)
-            minHeight = dp(44)
-            setPadding(dp(8), 0, dp(8), 0)
+            setTextColor(if (emphasized) Color.rgb(20, 24, 27) else primary)
+            minHeight = dp(48)
+            minWidth = 0
+            setPadding(dp(10), 0, dp(10), 0)
+            background = rippleBackground(
+                if (emphasized) intArrayOf(goldLight, gold)
+                else intArrayOf(Color.rgb(46, 58, 68), Color.rgb(29, 39, 49)),
+                if (emphasized) Color.rgb(226, 196, 145) else Color.rgb(84, 101, 115),
+                dp(11)
+            )
+            stateListAnimator = null
             setOnClickListener {
                 maybeAnimate(this)
                 action()
@@ -726,9 +975,10 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         }
 
     private fun textAction(value: String, action: () -> Unit) =
-        label(value, 12f, secondary, false).apply {
+        label(value, 12f, secondary, true).apply {
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, dp(3))
+            setPadding(dp(4), dp(8), dp(4), dp(8))
+            minHeight = dp(42)
             isClickable = true
             isFocusable = true
             setOnClickListener {
@@ -741,16 +991,47 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             .apply { topMargin = value }
 
-    private fun rounded(fill: Int, radius: Int, outline: Int) = GradientDrawable().apply {
-        setColor(fill)
-        cornerRadius = radius.toFloat()
-        setStroke(dp(1), outline)
+    private fun rounded(fill: Int, radius: Int, outline: Int) =
+        GradientDrawable().apply {
+            setColor(fill)
+            cornerRadius = radius.toFloat()
+            setStroke(dp(1), outline)
+        }
+
+    private fun roundedGradient(colors: IntArray, radius: Int, outline: Int) =
+        GradientDrawable(GradientDrawable.Orientation.TL_BR, colors).apply {
+            cornerRadius = radius.toFloat()
+            setStroke(dp(1), outline)
+        }
+
+    private fun pillBackground(fill: Int, outline: Int) =
+        GradientDrawable().apply {
+            setColor(fill)
+            cornerRadius = dp(50).toFloat()
+            setStroke(dp(1), outline)
+        }
+
+    private fun rippleBackground(fill: Int, outline: Int, radius: Int): Drawable =
+        rippleBackground(intArrayOf(fill, fill), outline, radius)
+
+    private fun rippleBackground(colors: IntArray, outline: Int, radius: Int): Drawable {
+        val content = roundedGradient(colors, radius, outline)
+        return RippleDrawable(
+            ColorStateList.valueOf(Color.argb(42, 224, 232, 238)),
+            content,
+            rounded(Color.WHITE, radius, Color.TRANSPARENT)
+        )
     }
 
     private fun oval(fill: Int) = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
         setColor(fill)
+        setStroke(dp(2), Color.argb(50, fill.red(), fill.green(), fill.blue()))
     }
+
+    private fun Int.red() = Color.red(this)
+    private fun Int.green() = Color.green(this)
+    private fun Int.blue() = Color.blue(this)
 
     private fun maskedToken() = "••••••••••••••••••••••••"
     private fun hasOverlayPermission() =
