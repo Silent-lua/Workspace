@@ -48,6 +48,9 @@ internal data class ExternalEspFrame(
     val showLines: Boolean,
     val showArrows: Boolean,
     val players: List<EspPlayer>,
+    // Wall-clock timestamp set by the Roblox-side sampler. Android and Roblox run
+    // on the same device, so this estimates time spent in the HTTP/Realtime path.
+    val capturedAtEpochMs: Long = System.currentTimeMillis(),
     val receivedAt: Long = SystemClock.elapsedRealtime()
 )
 
@@ -364,13 +367,19 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
         if (width <= 0 || height <= 0) return
         val screenWidth = width.toFloat()
         val screenHeight = height.toFloat()
-        val prior = previousFrame?.takeIf { it.receivedAt < frame.receivedAt }
-        val rawSampleDeltaMs = prior?.let { frame.receivedAt - it.receivedAt } ?: 0L
-        // Do not estimate velocity across a long packet gap, respawn or reconnect.
+        val prior = previousFrame?.takeIf {
+            it.capturedAtEpochMs < frame.capturedAtEpochMs
+        }
+        val rawSampleDeltaMs = prior?.let {
+            frame.capturedAtEpochMs - it.capturedAtEpochMs
+        } ?: 0L
+        // Use source capture times, not packet arrival times, to estimate actual player
+        // velocity. Long gaps are treated as discontinuities (respawn/reconnect).
         val sampleDeltaMs = rawSampleDeltaMs.takeIf { it in 16L..120L } ?: 0L
-        // Predict at most 75 ms ahead between network samples. This keeps moving targets
-        // visually continuous without an unbounded extrapolation when packets stop.
-        val predictionLeadMs = frameAgeMs.coerceAtMost(MAX_PREDICTION_MS)
+        // Compensate for time elapsed since Roblox sampled this frame. Both processes
+        // use the same Android device clock; clamp correction to avoid bad clock jumps.
+        val predictionLeadMs = (System.currentTimeMillis() - frame.capturedAtEpochMs)
+            .coerceIn(0L, MAX_PREDICTION_MS)
 
         for (player in frame.players) {
             val previous = prior?.players?.firstOrNull { it.id == player.id }
@@ -443,7 +452,9 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
 
         // Keep the overlay animating at display refresh while extrapolation is active;
         // otherwise it would only redraw on each 25 FPS network packet.
-        if (frameAgeMs < MAX_PREDICTION_MS) postInvalidateOnAnimation()
+        if (predictionLeadMs < MAX_PREDICTION_MS && frameAgeMs < FRAME_TTL_MS) {
+            postInvalidateOnAnimation()
+        }
     }
 
     private fun predict(current: Float, previous: Float, sampleDeltaMs: Long, leadMs: Long): Float {
