@@ -23,6 +23,7 @@ import android.os.Bundle
 import android.os.PersistableBundle
 import android.provider.Settings
 import android.view.Gravity
+import android.widget.FrameLayout
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -49,7 +50,14 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private lateinit var updateSubtitle: TextView
     private lateinit var updateProgress: ProgressBar
     private lateinit var updateButton: Button
+    private lateinit var rootFrame: FrameLayout
+    private lateinit var mandatoryGateContainer: LinearLayout
+    private lateinit var gateTitle: TextView
+    private lateinit var gateSubtitle: TextView
+    private lateinit var gateProgress: ProgressBar
+    private lateinit var gateActionButton: Button
 
+    private var signatureMigrationRequired = false
     private var pairingRevealed = false
     private var updateInfo: UpdateInfo? = null
     private var updateFile: File? = null
@@ -83,8 +91,10 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         }
         prefs = getSharedPreferences(SecureOverlayService.PREFS, MODE_PRIVATE)
         tokenStore = PairingTokenStore(this)
+        mandatoryGate = prefs.getBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, false)
         buildScreen()
         UpdateWorkScheduler.ensureScheduled(this)
+        applyMandatoryGate()
         checkForUpdate(force = false)
     }
 
@@ -165,60 +175,24 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             setBackgroundColor(Color.TRANSPARENT)
         }
 
-        // Brand bar
-        val header = LinearLayout(this).apply {
+        // Hero panel
+        val hero = card(hero = true)
+        val eyebrowRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val mark = TextView(this).apply {
-            text = "S"
-            textSize = 21f
-            typeface = Typeface.create("sans-serif", Typeface.BOLD)
-            setTextColor(goldLight)
-            gravity = Gravity.CENTER
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(42, 53, 63), Color.rgb(17, 24, 32))
-            ).apply {
-                cornerRadius = dp(14).toFloat()
-                setStroke(dp(1), Color.rgb(94, 111, 124))
-            }
-            elevation = dp(3).toFloat()
-            layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
-            contentDescription = "SilentHub"
-        }
-        val brand = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), 0, 0, 0)
-            addView(label("SILENTHUB", 12f, primary, true).apply { letterSpacing = 0.19f })
-            addView(label("EXTERNAL", 9f, muted, true).apply {
-                letterSpacing = 0.14f
-                setPadding(0, dp(3), 0, 0)
-            })
-        }
-        header.addView(mark)
-        header.addView(brand)
-        header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        val versionPill = label("v" + installedVersionName(), 10f, goldLight, true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            background = pillBackground(Color.rgb(35, 41, 45), Color.rgb(91, 78, 58))
-        }
-        header.addView(versionPill)
-        content.addView(header)
-
-        // Hero panel
-        val hero = card(hero = true)
+        eyebrowRow.addView(label("FIELD CONSOLE  /  ANDROID CLIENT", 9f, goldLight, true).apply {
+            letterSpacing = 0.10f
+            maxLines = 2
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val animatedLogoId = resources.getIdentifier("silenthub_logo", "raw", packageName)
         if (animatedLogoId != 0) {
-            hero.addView(
+            eyebrowRow.addView(
                 GifLogoView(this, animatedLogoId),
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(132))
+                LinearLayout.LayoutParams(dp(116), dp(65)).apply { leftMargin = dp(8) }
             )
         }
-        hero.addView(label("FIELD CONSOLE   /   ANDROID CLIENT", 9f, goldLight, true).apply {
-            letterSpacing = 0.16f
-        })
+        hero.addView(eyebrowRow)
         hero.addView(label("External ESP", 29f, primary, true), topMargin(dp(10)))
         hero.addView(label(
             "A secure, low-latency companion for your Delta ESP session.",
@@ -392,7 +366,15 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             setPadding(dp(9), dp(7), dp(9), dp(7))
             background = pillBackground(Color.rgb(24, 36, 38), Color.rgb(56, 91, 83))
         }
-        updateTop.addView(verified)
+        val installedVersion = label("v" + installedVersionName(), 9f, goldLight, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(9), dp(7), dp(9), dp(7))
+            background = pillBackground(Color.rgb(35, 41, 45), Color.rgb(91, 78, 58))
+        }
+        updateTop.addView(installedVersion)
+        updateTop.addView(verified, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { leftMargin = dp(6) })
         updateCard.addView(updateTop)
         updateSubtitle = label("Consultando el manifiesto de publicación…", 12f, muted, false)
         updateCard.addView(updateSubtitle, topMargin(dp(8)))
@@ -442,12 +424,149 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         }, topMargin(dp(24)))
 
         scroll.addView(content)
-        setContentView(scroll)
+        rootFrame = FrameLayout(this).apply {
+            setBackgroundColor(bg)
+            addView(scroll, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            ))
+        }
+        mandatoryGateContainer = buildMandatoryGate()
+        rootFrame.addView(mandatoryGateContainer, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        setContentView(rootFrame)
         scroll.requestApplyInsets()
         refreshPairingToken()
         refreshConnectionState()
         renderInstallStatus()
         animateEntrance(content)
+    }
+
+    private fun buildMandatoryGate(): LinearLayout {
+        val gate = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(26), dp(28), dp(26), dp(30))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.BLACK, Color.rgb(8, 12, 17), Color.BLACK)
+            )
+            visibility = View.GONE
+            elevation = dp(20).toFloat()
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        val logoId = resources.getIdentifier("silenthub_logo", "raw", packageName)
+        if (logoId != 0) {
+            content.addView(GifLogoView(this, logoId), LinearLayout.LayoutParams(
+                dp(176), dp(99)
+            ).apply { bottomMargin = dp(22) })
+        }
+        content.addView(label("SILENTHUB EXTERNAL", 10f, goldLight, true).apply {
+            letterSpacing = 0.18f
+            gravity = Gravity.CENTER
+        })
+        gateTitle = label("Actualización obligatoria", 24f, primary, true).apply {
+            gravity = Gravity.CENTER
+        }
+        content.addView(gateTitle, topMargin(dp(14)))
+        gateSubtitle = label(
+            "Hay una nueva versión que debes instalar para continuar.",
+            13f, secondary, false
+        ).apply {
+            gravity = Gravity.CENTER
+        }
+        content.addView(gateSubtitle, topMargin(dp(10)))
+        gateProgress = ProgressBar(
+            this, null, android.R.attr.progressBarStyleHorizontal
+        ).apply {
+            max = 100
+            progress = 0
+            visibility = View.GONE
+            progressTintList = ColorStateList.valueOf(gold)
+            progressBackgroundTintList = ColorStateList.valueOf(stroke)
+        }
+        content.addView(gateProgress, topMargin(dp(24)))
+        gateActionButton = actionButton("Comprobar actualización", true) {
+            performMandatoryGateAction()
+        }
+        content.addView(gateActionButton, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(52)
+        ).apply { topMargin = dp(18) })
+        content.addView(label(
+            "La aplicación permanecerá bloqueada hasta completar la instalación.",
+            11f, muted, false
+        ).apply {
+            gravity = Gravity.CENTER
+            textAlignment = View.TEXT_ALIGNMENT_CENTER
+        }, topMargin(dp(16)))
+        gate.addView(content, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        return gate
+    }
+
+    private fun performMandatoryGateAction() {
+        when {
+            signatureMigrationRequired -> {
+                val url = updateInfo?.releaseUrl ?: return
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            }
+            updateFile != null -> installUpdate()
+            updateInfo != null && !downloadInFlight -> downloadUpdate(updateInfo!!)
+            !updateCheckInFlight && !downloadInFlight -> checkForUpdate(force = true)
+        }
+    }
+
+    private fun refreshMandatoryGate() {
+        if (!::mandatoryGateContainer.isInitialized) return
+        mandatoryGateContainer.visibility = if (mandatoryGate) View.VISIBLE else View.GONE
+        if (!mandatoryGate) return
+
+        gateProgress.visibility = if (downloadInFlight || updateCheckInFlight) View.VISIBLE else View.GONE
+        gateProgress.isIndeterminate = updateCheckInFlight
+        when {
+            signatureMigrationRequired -> {
+                gateTitle.text = "Migración inicial de firma"
+                gateSubtitle.text = "Esta instalación de prueba usa un certificado distinto al de distribución. Android no permite actualizarla encima. Guarda tu código de Delta, desinstala esta versión e instala el release oficial. Después de esa única migración, las actualizaciones conservarán tus datos."
+                gateActionButton.text = "Abrir release oficial"
+                gateActionButton.isEnabled = true
+            }
+            updateFile != null -> {
+                gateTitle.text = "Actualización lista · v" + (updateInfo?.versionName ?: "")
+                gateSubtitle.text = "Descarga, integridad y firma verificadas. Instala para desbloquear SilentHub."
+                gateActionButton.text = "Instalar actualización"
+                gateActionButton.isEnabled = true
+            }
+            downloadInFlight -> {
+                gateTitle.text = "Descargando actualización"
+                gateSubtitle.text = "El panel está bloqueado mientras se descarga y verifica el paquete."
+                gateActionButton.text = "Descargando…"
+                gateActionButton.isEnabled = false
+            }
+            updateCheckInFlight -> {
+                gateTitle.text = "Comprobando actualización"
+                gateSubtitle.text = "Consultando el canal oficial de SilentHub."
+                gateActionButton.text = "Comprobando…"
+                gateActionButton.isEnabled = false
+            }
+            updateInfo != null -> {
+                gateTitle.text = "Actualización obligatoria · v" + updateInfo!!.versionName
+                gateSubtitle.text = updateInfo!!.changelog
+                gateActionButton.text = "Reintentar descarga"
+                gateActionButton.isEnabled = true
+            }
+            else -> {
+                gateTitle.text = "Actualización pendiente"
+                gateSubtitle.text = "No se pudo verificar el paquete. La aplicación seguirá bloqueada hasta comprobar e instalar una versión válida."
+                gateActionButton.text = "Reintentar comprobación"
+                gateActionButton.isEnabled = true
+            }
+        }
     }
 
     private fun restoreReceiverWhenAppropriate() {
@@ -649,6 +768,8 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
 
     private fun checkForUpdate(force: Boolean) {
         if (updateCheckInFlight || downloadInFlight) return
+        mandatoryGate = prefs.getBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, false)
+        refreshMandatoryGate()
         if (prefs.getBoolean(SecureOverlayService.KEY_RUNNING, false)) {
             updateSubtitle.text = "La comprobación se pospone mientras el receptor está activo."
             return
@@ -657,6 +778,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         updateTitle.text = "Comprobando versión"
         updateSubtitle.text = "Consultando el manifiesto remoto…"
         updateButton.isEnabled = false
+        refreshMandatoryGate()
         io.execute {
             try {
                 val manager = UpdateManager(this)
@@ -668,18 +790,35 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                     updateInfo = info
                     updateFile = cached
                     if (info == null) {
-                        mandatoryGate = false
-                        prefs.edit().putBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, false).apply()
-                        updateTitle.text = "Aplicación actualizada"
-                        updateSubtitle.text = "No hay una versión más reciente publicada."
+                        val requiredCode = prefs.getLong(UpdateManager.KEY_REQUIRED_VERSION_CODE, 0L)
+                        val requiredStillPending = prefs.getBoolean(
+                            SecureOverlayService.KEY_UPDATE_MANDATORY, false
+                        ) && requiredCode > 0L && manager.currentVersionCode() < requiredCode
+                        mandatoryGate = requiredStillPending
+                        if (!requiredStillPending) {
+                            prefs.edit()
+                                .putBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, false)
+                                .remove(UpdateManager.KEY_REQUIRED_VERSION_CODE)
+                                .apply()
+                        }
+                        updateTitle.text = if (mandatoryGate) "Actualización pendiente" else "Aplicación actualizada"
+                        updateSubtitle.text = if (mandatoryGate) {
+                            "El servidor aún no confirma la versión pendiente. Reintenta la comprobación."
+                        } else {
+                            "No hay una versión más reciente publicada."
+                        }
                         updateProgress.visibility = View.GONE
-                        updateButton.text = "Buscar actualizaciones"
+                        updateButton.text = if (mandatoryGate) "Reintentar" else "Buscar actualizaciones"
                         updateButton.setOnClickListener { checkForUpdate(force = true) }
                         applyMandatoryGate()
                     } else {
+                        prefs.edit()
+                            .putLong(UpdateManager.KEY_REQUIRED_VERSION_CODE, info.minimumSupportedVersionCode)
+                            .apply()
                         mandatoryGate = info.mandatory &&
                             manager.currentVersionCode() < info.minimumSupportedVersionCode
                         prefs.edit().putBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, mandatoryGate).apply()
+                        signatureMigrationRequired = false
                         if (cached != null) renderUpdateReady(info)
                         else {
                             renderUpdateAvailable(info)
@@ -691,11 +830,13 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                 runOnUiThread {
                     updateCheckInFlight = false
                     updateButton.isEnabled = true
+                    mandatoryGate = prefs.getBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, false)
                     updateTitle.text = "No se pudo verificar"
                     updateSubtitle.text = error.message?.take(160)
                         ?: "El servicio de actualizaciones no está disponible."
                     updateButton.text = "Reintentar"
                     updateButton.setOnClickListener { checkForUpdate(force = true) }
+                    refreshMandatoryGate()
                 }
             }
         }
@@ -719,6 +860,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         updateTitle.text = "Preparando v" + info.versionName
         updateSubtitle.text = "Descarga y verificación de integridad…"
         updateButton.isEnabled = false
+        refreshMandatoryGate()
         io.execute {
             try {
                 val file = UpdateManager(this).download(info) { downloaded, total ->
@@ -731,6 +873,11 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                             } else 0
                             updateProgress.progress = percent
                             updateSubtitle.text = "Descargando · " + percent + "%"
+                            if (::gateProgress.isInitialized && mandatoryGate) {
+                                gateProgress.isIndeterminate = false
+                                gateProgress.progress = percent
+                                gateSubtitle.text = "Descargando actualización · " + percent + "%"
+                            }
                         }
                     }
                 }
@@ -744,6 +891,9 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                 runOnUiThread {
                     downloadInFlight = false
                     updateProgress.visibility = View.GONE
+                    signatureMigrationRequired = true
+                    mandatoryGate = true
+                    prefs.edit().putBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, true).apply()
                     updateTitle.text = "Migración inicial de firma"
                     updateSubtitle.text = "La APK de prueba y el release utilizan certificados distintos. Esta migración requiere desinstalar la versión de prueba una vez; las siguientes versiones firmadas podrán actualizarse en el sitio."
                     updateButton.isEnabled = true
@@ -751,6 +901,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                     updateButton.setOnClickListener {
                         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.releaseUrl)))
                     }
+                    refreshMandatoryGate()
                 }
             } catch (error: Exception) {
                 runOnUiThread {
@@ -761,6 +912,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                     updateButton.isEnabled = true
                     updateButton.text = "Reintentar"
                     updateButton.setOnClickListener { downloadUpdate(info) }
+                    refreshMandatoryGate()
                 }
             }
         }
@@ -793,13 +945,18 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         updateButton.isEnabled = false
         updateTitle.text = "Preparando instalación"
         updateSubtitle.text = "El instalador de Android solicitará confirmación."
+        refreshMandatoryGate()
         io.execute {
             try {
                 UpdateManager(this).install(file, info)
                 runOnUiThread {
                     updateTitle.text = "Confirmación de Android"
-                    updateSubtitle.text = "Completa la instalación en el diálogo del sistema."
+                    updateSubtitle.text = "Completa la instalación en el diálogo del sistema o en la notificación de Android."
                     updateButton.isEnabled = true
+                    gateTitle.text = "Confirma en Android"
+                    gateSubtitle.text = "Acepta la instalación en el diálogo o notificación del sistema. SilentHub seguirá bloqueado hasta que Android confirme la actualización."
+                    gateActionButton.text = "Esperando confirmación…"
+                    gateActionButton.isEnabled = false
                 }
             } catch (error: Exception) {
                 runOnUiThread {
@@ -816,6 +973,11 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             "installed" -> {
                 updateTitle.text = "Actualización instalada"
                 updateSubtitle.text = "Android confirmó la instalación."
+                signatureMigrationRequired = false
+                mandatoryGate = false
+                updateInfo = null
+                updateFile = null
+                refreshMandatoryGate()
             }
             "failed" -> {
                 updateTitle.text = "Instalación no completada"
@@ -823,9 +985,28 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                     SecureOverlayService.KEY_INSTALL_ERROR,
                     "Error de instalación."
                 )
+                if (mandatoryGate) {
+                    gateTitle.text = "Instalación no completada"
+                    gateSubtitle.text = updateSubtitle.text
+                    gateActionButton.text = "Reintentar instalación"
+                    gateActionButton.isEnabled = updateFile != null
+                }
+                refreshMandatoryGate()
             }
-            "awaiting_user_confirmation" ->
+            "awaiting_user_confirmation" -> {
                 updateSubtitle.text = "Esperando confirmación en Android."
+                if (mandatoryGate) {
+                    gateTitle.text = "Confirma la actualización"
+                    gateSubtitle.text = "Abre la notificación de SilentHub o el diálogo de Android y acepta la instalación."
+                    gateActionButton.text = "Esperando confirmación…"
+                    gateActionButton.isEnabled = false
+                }
+            }
+            "release_signature_migration_required" -> {
+                signatureMigrationRequired = true
+                mandatoryGate = true
+                refreshMandatoryGate()
+            }
         }
     }
 
@@ -838,10 +1019,11 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             if (prefs.getBoolean(SecureOverlayService.KEY_RUNNING, false)) stopReceiver(userInitiated = false)
             startButton.isEnabled = false
             startButton.alpha = 0.45f
-            stateSubtitle.text = "Una actualización obligatoria bloquea el receptor hasta instalarse."
+            stateSubtitle.text = "Una actualización obligatoria bloquea el panel hasta instalarse."
         } else {
             refreshConnectionState()
         }
+        refreshMandatoryGate()
     }
 
     private fun maybeAnimate(view: View) {
