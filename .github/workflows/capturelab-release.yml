@@ -101,8 +101,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: SilentHub External ${{ env.RELEASE_TAG }}
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+          name: SilentHub External ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
           files: |
             release-assets/SilentHub-External-ESP.apk
             release-assets/SilentHub-External-ESP.apk.sha256
