@@ -451,7 +451,7 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
         }
 
         // Keep the overlay animating at display refresh while extrapolation is active;
-        // otherwise it would only redraw on each 25 FPS network packet.
+        // otherwise it would only redraw on each 28 FPS network packet.
         if (predictionLeadMs < MAX_PREDICTION_MS && frameAgeMs < FRAME_TTL_MS) {
             postInvalidateOnAnimation()
         }
@@ -495,6 +495,6 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
 
     companion object {
         private const val FRAME_TTL_MS = 450L
-        private const val MAX_PREDICTION_MS = 75L
+        private const val MAX_PREDICTION_MS = 120L
     }
 }
