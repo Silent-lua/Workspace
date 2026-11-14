@@ -115,6 +115,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
 
     override fun onResume() {
         super.onResume()
+        handlePendingInstallConfirmation()
         refreshConnectionState()
         if (!updateCheckInFlight && !downloadInFlight &&
             !prefs.getBoolean(SecureOverlayService.KEY_RUNNING, false)) {
@@ -141,7 +142,9 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             SecureOverlayService.KEY_USER_STOPPED,
             SecureOverlayService.KEY_INSTALL_STATUS,
             SecureOverlayService.KEY_INSTALL_ERROR,
-            SecureOverlayService.KEY_UPDATE_MANDATORY -> runOnUiThread {
+            SecureOverlayService.KEY_UPDATE_MANDATORY,
+            InstallStatusReceiver.KEY_PENDING_CONFIRMATION -> runOnUiThread {
+                handlePendingInstallConfirmation()
                 refreshConnectionState()
                 renderInstallStatus()
                 applyMandatoryGate()
@@ -965,6 +968,26 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                     updateButton.isEnabled = true
                 }
             }
+        }
+    }
+
+    private fun handlePendingInstallConfirmation() {
+        val encoded = prefs.getString(InstallStatusReceiver.KEY_PENDING_CONFIRMATION, null)
+            ?: return
+        prefs.edit().remove(InstallStatusReceiver.KEY_PENDING_CONFIRMATION).apply()
+        try {
+            val confirmation = Intent.parseUri(encoded, Intent.URI_INTENT_SCHEME).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(confirmation)
+        } catch (error: Exception) {
+            prefs.edit()
+                .putString(SecureOverlayService.KEY_INSTALL_STATUS, "failed")
+                .putString(
+                    SecureOverlayService.KEY_INSTALL_ERROR,
+                    "Android no permitió abrir la confirmación: " + (error.message ?: "intenta instalar de nuevo.")
+                )
+                .apply()
         }
     }
 
