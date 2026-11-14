@@ -976,7 +976,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         label(value, 12f, secondary, true).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), dp(8), dp(4), dp(8))
-            minHeight = dp(42)
+            minHeight = dp(48)
             isClickable = true
             isFocusable = true
             setOnClickListener {
