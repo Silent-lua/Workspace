@@ -23,7 +23,13 @@ internal class UpdateCheckWorker(context: Context, parameters: WorkerParameters)
             val manager = UpdateManager(applicationContext)
             val info = manager.checkLatest(force = true)
             if (info == null) {
-                prefs.edit().putBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, false).apply()
+                val requiredCode = prefs.getLong(UpdateManager.KEY_REQUIRED_VERSION_CODE, 0L)
+                if (requiredCode <= 0L || manager.currentVersionCode() >= requiredCode) {
+                    prefs.edit()
+                        .putBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, false)
+                        .remove(UpdateManager.KEY_REQUIRED_VERSION_CODE)
+                        .apply()
+                }
                 return Result.success()
             }
             if (prefs.getBoolean(SecureOverlayService.KEY_RUNNING, false)) return Result.success()
@@ -32,6 +38,7 @@ internal class UpdateCheckWorker(context: Context, parameters: WorkerParameters)
             prefs.edit()
                 .putString(SecureOverlayService.KEY_PENDING_UPDATE_VERSION, info.versionName)
                 .putString(SecureOverlayService.KEY_PENDING_UPDATE_FILE, file.absolutePath)
+                .putLong(UpdateManager.KEY_REQUIRED_VERSION_CODE, info.minimumSupportedVersionCode)
                 .putBoolean(
                     SecureOverlayService.KEY_UPDATE_MANDATORY,
                     info.mandatory && manager.currentVersionCode() < info.minimumSupportedVersionCode
@@ -39,7 +46,10 @@ internal class UpdateCheckWorker(context: Context, parameters: WorkerParameters)
                 .apply()
             Result.success()
         } catch (_: ReleaseSignatureMismatchException) {
-            prefs.edit().putString(SecureOverlayService.KEY_INSTALL_STATUS, "release_signature_migration_required").apply()
+            prefs.edit()
+                .putString(SecureOverlayService.KEY_INSTALL_STATUS, "release_signature_migration_required")
+                .putBoolean(SecureOverlayService.KEY_UPDATE_MANDATORY, true)
+                .apply()
             Result.success()
         } catch (_: Exception) {
             Result.retry()
