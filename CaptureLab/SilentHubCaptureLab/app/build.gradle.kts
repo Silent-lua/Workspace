@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -19,7 +21,7 @@ val generateSilentHubLauncherAssets by tasks.registering {
     doLast {
         val output = generatedLauncherResDir.get().dir("mipmap-nodpi").asFile
         output.mkdirs()
-        val decoder = java.util.Base64.getMimeDecoder()
+        val decoder = Base64.getMimeDecoder()
         val foreground = launcherAssetDir.file("silenthub_adaptive_foreground.png.b64").asFile
             .readText().trim()
         val legacy = launcherAssetDir.file("silenthub_legacy_icon.png.b64").asFile
