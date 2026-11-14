@@ -214,6 +214,8 @@ internal class SupabaseRealtimeEspReceiver(
             showLines = options.optBoolean("lines", false),
             showArrows = options.optBoolean("arrows", false),
             players = players,
+            capturedAtEpochMs = json.optLong("capturedAtMs", System.currentTimeMillis())
+                .takeIf { it > 0L } ?: System.currentTimeMillis(),
             receivedAt = SystemClock.elapsedRealtime()
         )
     }
