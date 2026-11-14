@@ -54,6 +54,19 @@ class SecureOverlayService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
+            ACTION_TOGGLE_PAUSE -> {
+                if (prefs.getBoolean(KEY_USER_STOPPED, false)) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                if (prefs.getBoolean(KEY_PAUSED, false)) {
+                    startAsForegroundService()
+                    resumeSession()
+                } else {
+                    pauseSession()
+                }
+                return START_STICKY
+            }
             ACTION_PAUSE -> {
                 if (prefs.getBoolean(KEY_USER_STOPPED, false)) {
                     stopSelf()
@@ -280,16 +293,13 @@ class SecureOverlayService : Service() {
         )
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         val paused = prefs.getBoolean(KEY_PAUSED, false)
-        val pausePending = PendingIntent.getService(
+        val togglePending = PendingIntent.getService(
             this, 12,
-            Intent(this, SecureOverlayService::class.java).apply { action = ACTION_PAUSE },
+            Intent(this, SecureOverlayService::class.java).apply { action = ACTION_TOGGLE_PAUSE },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val resumePending = PendingIntent.getService(
-            this, 13,
-            Intent(this, SecureOverlayService::class.java).apply { action = ACTION_RESUME },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val toggleLabel = if (paused) "Reanudar" else "Pausar"
+        val toggleIcon = if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
         val stopIntent = Intent(this, SecureOverlayService::class.java).apply { action = ACTION_STOP }
         val stopPending = PendingIntent.getService(
             this, 11, stopIntent,
@@ -309,8 +319,7 @@ class SecureOverlayService : Service() {
             .setContentIntent(openPending)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .addAction(android.R.drawable.ic_media_pause, "Pausar", pausePending)
-            .addAction(android.R.drawable.ic_media_play, "Reanudar", resumePending)
+            .addAction(toggleIcon, toggleLabel, togglePending)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Detener", stopPending)
             .build()
     }
@@ -365,6 +374,7 @@ class SecureOverlayService : Service() {
         private const val ACTION_STOP = "com.silenthub.capturelab.STOP_EXTERNAL_ESP"
         private const val ACTION_PAUSE = "com.silenthub.capturelab.PAUSE_EXTERNAL_ESP"
         private const val ACTION_RESUME = "com.silenthub.capturelab.RESUME_EXTERNAL_ESP"
+        private const val ACTION_TOGGLE_PAUSE = "com.silenthub.capturelab.TOGGLE_PAUSE_EXTERNAL_ESP"
         private const val FRAME_STALE_MS = 2_500L
         private const val FRAME_HEALTH_PERSIST_MS = 5_000L
     }
