@@ -77,7 +77,11 @@ internal class UpdateManager(context: Context) {
                 return parseManifest(body)
             }
         } catch (error: Exception) {
-            if (cached != null && now - checkedAt <= STALE_CACHE_MS) return parseManifest(cached)
+            // A forced foreground check must not reuse a stale "no update" response.
+            // Preserve stale fallback only for non-forced/background checks.
+            if (!force && cached != null && now - checkedAt <= STALE_CACHE_MS) {
+                return parseManifest(cached)
+            }
             throw error
         }
     }
