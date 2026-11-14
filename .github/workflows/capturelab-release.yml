@@ -54,9 +54,11 @@ jobs:
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/silent-hub-release.jks" >> "$GITHUB_ENV"
       - name: Resolve release version
         shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            RELEASE_TAG="v${{ inputs.version }}"
+            RELEASE_TAG="v${INPUT_VERSION}"
           else
             RELEASE_TAG="$GITHUB_REF_NAME"
           fi
