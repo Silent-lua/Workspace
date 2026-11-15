@@ -273,7 +273,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         // Pairing
         content.addView(sectionHeader("PAIRING", "Device identity and access"), topMargin(dp(24)))
         val pairCard = card()
-        pairCard.addView(label("PAIRING TOKEN", 10f, goldLight, true).apply {
+        pairCard.addView(label("PAIRING TOKEN", 10f, silverBright, true).apply {
             letterSpacing = 0.13f
         })
         pairCard.addView(label(
@@ -330,7 +330,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         // Receiver controls
         content.addView(sectionHeader("RECEIVER", "Secure overlay controls"), topMargin(dp(24)))
         val receiverCard = card()
-        receiverCard.addView(label("ESP SESSION", 10f, goldLight, true).apply {
+        receiverCard.addView(label("ESP SESSION", 10f, silverBright, true).apply {
             letterSpacing = 0.13f
         })
         receiverCard.addView(label(
@@ -362,7 +362,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             11f, muted, false
         ), topMargin(dp(11)))
         receiverCard.addView(label(
-            "SCREEN CAPTURE PROTECTION  /  FLAG_SECURE", 10f, goldLight, true
+            "SCREEN CAPTURE PROTECTION  /  FLAG_SECURE", 10f, silverBright, true
         ).apply { letterSpacing = 0.12f }, topMargin(dp(18)))
         receiverCard.addView(label(
             "Bloquea capturas y grabaciones cuando está activo. Desactívalo temporalmente para grabar el ESP junto con el resto de la pantalla.",
@@ -386,7 +386,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         }
         val updateHeading = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(label("UPDATE MANAGER", 10f, goldLight, true).apply {
+            addView(label("UPDATE MANAGER", 10f, silverBright, true).apply {
                 letterSpacing = 0.12f
             })
             updateTitle = label("Automatic updates", 16f, primary, true)
@@ -398,7 +398,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             setPadding(dp(9), dp(7), dp(9), dp(7))
             background = pillBackground(Color.rgb(8, 34, 37), Color.rgb(35, 130, 127))
         }
-        val installedVersion = label("v" + installedVersionName(), 9f, goldLight, true).apply {
+        val installedVersion = label("v" + installedVersionName(), 9f, silverBright, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(9), dp(7), dp(9), dp(7))
             background = pillBackground(Color.rgb(21, 31, 34), Color.rgb(121, 155, 158))
@@ -414,7 +414,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             max = 100
             progress = 0
             visibility = View.GONE
-            progressTintList = ColorStateList.valueOf(gold)
+            progressTintList = ColorStateList.valueOf(turquoise)
             progressBackgroundTintList = ColorStateList.valueOf(stroke)
         }
         updateCard.addView(updateProgress, topMargin(dp(14)))
@@ -425,7 +425,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         // Engineering note
         content.addView(sectionHeader("SYSTEM", "Capture-safe by design"), topMargin(dp(24)))
         val note = card()
-        note.addView(label("RENDER PIPELINE", 10f, goldLight, true).apply {
+        note.addView(label("RENDER PIPELINE", 10f, silverBright, true).apply {
             letterSpacing = 0.13f
         })
         note.addView(label("Event-driven rendering", 16f, primary, true), topMargin(dp(6)))
@@ -499,7 +499,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                 dp(176), dp(99)
             ).apply { bottomMargin = dp(22) })
         }
-        content.addView(label("SILENTHUB EXTERNAL", 10f, goldLight, true).apply {
+        content.addView(label("SILENTHUB EXTERNAL", 10f, silverBright, true).apply {
             letterSpacing = 0.18f
             gravity = Gravity.CENTER
         })
@@ -520,7 +520,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             max = 100
             progress = 0
             visibility = View.GONE
-            progressTintList = ColorStateList.valueOf(gold)
+            progressTintList = ColorStateList.valueOf(turquoise)
             progressBackgroundTintList = ColorStateList.valueOf(stroke)
         }
         content.addView(gateProgress, topMargin(dp(24)))
@@ -1256,14 +1256,14 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             val marker = View(this@MainActivity).apply {
                 background = GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM,
-                    intArrayOf(goldLight, gold)
+                    intArrayOf(silverBright, turquoise)
                 ).apply { cornerRadius = dp(2).toFloat() }
                 layoutParams = LinearLayout.LayoutParams(dp(3), dp(28))
             }
             val labels = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(11), 0, 0, 0)
-                addView(label(title, 10f, goldLight, true).apply { letterSpacing = 0.16f })
+                addView(label(title, 10f, silverBright, true).apply { letterSpacing = 0.16f })
                 addView(label(subtitle, 11f, muted, false).apply {
                     setPadding(0, dp(3), 0, 0)
                 })
@@ -1293,7 +1293,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             minWidth = 0
             setPadding(dp(10), 0, dp(10), 0)
             background = rippleBackground(
-                if (emphasized) intArrayOf(goldLight, gold)
+                if (emphasized) intArrayOf(silverBright, turquoise)
                 else intArrayOf(Color.rgb(21, 49, 53), Color.rgb(10, 27, 31)),
                 if (emphasized) Color.rgb(185, 238, 237) else Color.rgb(62, 113, 117),
                 dp(11)
