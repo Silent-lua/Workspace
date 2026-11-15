@@ -67,19 +67,20 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private var mandatoryGate = false
     private var lastProgressUiAt = 0L
 
-    // Midnight graphite, cool steel and restrained champagne accents.
-    private val bg = Color.BLACK
-    private val panel = Color.rgb(16, 22, 29)
-    private val panelRaised = Color.rgb(24, 32, 41)
-    private val stroke = Color.rgb(48, 61, 73)
-    private val primary = Color.rgb(241, 245, 248)
-    private val secondary = Color.rgb(177, 190, 200)
-    private val muted = Color.rgb(126, 142, 154)
-    private val gold = Color.rgb(195, 163, 111)
-    private val goldLight = Color.rgb(229, 205, 160)
-    private val connected = Color.rgb(113, 194, 151)
-    private val warning = Color.rgb(218, 174, 105)
-    private val errorColor = Color.rgb(214, 123, 123)
+    // Obsidian black, deep turquoise, white and cool silver.
+    private val bg = Color.rgb(3, 8, 11)
+    private val panel = Color.rgb(8, 19, 22)
+    private val panelRaised = Color.rgb(11, 31, 35)
+    private val stroke = Color.rgb(36, 81, 88)
+    private val primary = Color.rgb(245, 250, 250)
+    private val secondary = Color.rgb(202, 220, 221)
+    private val muted = Color.rgb(119, 145, 148)
+    private val turquoise = Color.rgb(24, 214, 208)
+    private val silverBright = Color.rgb(230, 243, 244)
+    private val connected = Color.rgb(35, 215, 204)
+    private val warning = Color.rgb(190, 211, 213)
+    private val errorColor = Color.rgb(164, 184, 187)
+    private var accentSheen: ValueAnimator? = null
     private var statusPulse: ValueAnimator? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -128,6 +129,8 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     override fun onDestroy() {
         statusPulse?.cancel()
         statusPulse = null
+        accentSheen?.cancel()
+        accentSheen = null
         io.shutdown()
         super.onDestroy()
     }
@@ -186,7 +189,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        eyebrowRow.addView(label("FIELD CONSOLE  /  ANDROID CLIENT", 9f, goldLight, true).apply {
+        eyebrowRow.addView(label("FIELD CONSOLE  /  ANDROID CLIENT", 9f, silverBright, true).apply {
             letterSpacing = 0.10f
             maxLines = 2
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -206,11 +209,17 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         val heroRule = View(this).apply {
             background = GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(gold, Color.rgb(93, 112, 125), Color.TRANSPARENT)
+                intArrayOf(turquoise, Color.rgb(194, 222, 223), Color.TRANSPARENT)
             )
             layoutParams = LinearLayout.LayoutParams(dp(94), dp(2))
         }
         hero.addView(heroRule, topMargin(dp(18)))
+        accentSheen = ValueAnimator.ofFloat(0.68f, 1f, 0.68f).apply {
+            duration = 2600L
+            repeatCount = ValueAnimator.INFINITE
+            addUpdateListener { heroRule.alpha = it.animatedValue as Float }
+            start()
+        }
         val secureChip = label("◆  SECURE CHANNEL  ·  PRIVATE PAIRING", 9f, secondary, true).apply {
             letterSpacing = 0.07f
             setPadding(dp(10), dp(8), dp(10), dp(8))
@@ -264,7 +273,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             letterSpacing = 0.13f
         })
         pairCard.addView(label(
-            "Copy this code once into Delta. Keep it private; anyone with the code can publish to your channel.",
+            "Código privado de esta instalación. Se conserva al actualizar el APK oficial; no cambia con la versión.",
             12f, muted, false
         ), topMargin(dp(7)))
         pairingValue = label(maskedToken(), 13f, primary, true).apply {
@@ -369,12 +378,12 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         val verified = label("SHA-256", 9f, secondary, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(9), dp(7), dp(9), dp(7))
-            background = pillBackground(Color.rgb(24, 36, 38), Color.rgb(56, 91, 83))
+            background = pillBackground(Color.rgb(8, 34, 37), Color.rgb(35, 130, 127))
         }
         val installedVersion = label("v" + installedVersionName(), 9f, goldLight, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(9), dp(7), dp(9), dp(7))
-            background = pillBackground(Color.rgb(35, 41, 45), Color.rgb(91, 78, 58))
+            background = pillBackground(Color.rgb(21, 31, 34), Color.rgb(121, 155, 158))
         }
         updateTop.addView(installedVersion)
         updateTop.addView(verified, LinearLayout.LayoutParams(
@@ -456,7 +465,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             setPadding(dp(26), dp(28), dp(26), dp(30))
             background = GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.BLACK, Color.rgb(8, 12, 17), Color.BLACK)
+                intArrayOf(Color.BLACK, Color.rgb(5, 22, 25), Color.BLACK)
             )
             visibility = View.GONE
             elevation = dp(20).toFloat()
@@ -1183,10 +1192,10 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         orientation = LinearLayout.VERTICAL
         setPadding(dp(17), dp(17), dp(17), dp(17))
         background = roundedGradient(
-            if (hero) intArrayOf(Color.rgb(30, 40, 49), Color.rgb(17, 25, 33))
-            else intArrayOf(Color.rgb(24, 32, 41), panel),
+            if (hero) intArrayOf(Color.rgb(17, 43, 47), Color.rgb(7, 18, 21))
+            else intArrayOf(Color.rgb(12, 30, 34), panel),
             dp(if (hero) 18 else 15),
-            if (hero) Color.rgb(76, 91, 102) else stroke
+            if (hero) Color.rgb(90, 143, 146) else stroke
         )
         elevation = dp(if (hero) 5 else 2).toFloat()
         clipToPadding = false
@@ -1232,14 +1241,14 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             textSize = 12f
             isAllCaps = false
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setTextColor(if (emphasized) Color.rgb(20, 24, 27) else primary)
+            setTextColor(if (emphasized) Color.rgb(3, 15, 17) else primary)
             minHeight = dp(48)
             minWidth = 0
             setPadding(dp(10), 0, dp(10), 0)
             background = rippleBackground(
                 if (emphasized) intArrayOf(goldLight, gold)
-                else intArrayOf(Color.rgb(46, 58, 68), Color.rgb(29, 39, 49)),
-                if (emphasized) Color.rgb(226, 196, 145) else Color.rgb(84, 101, 115),
+                else intArrayOf(Color.rgb(21, 49, 53), Color.rgb(10, 27, 31)),
+                if (emphasized) Color.rgb(185, 238, 237) else Color.rgb(62, 113, 117),
                 dp(11)
             )
             stateListAnimator = null
