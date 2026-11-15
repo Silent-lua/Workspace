@@ -301,32 +301,33 @@ internal class LiveEspOverlayView(context: Context) : View(context) {
     }
 
     private val boxGlow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.RED
+        color = Color.rgb(215, 237, 238)
         style = Paint.Style.STROKE
         strokeWidth = 4.5f * density
-        alpha = 65
+        alpha = 95
+        setShadowLayer(7f * density, 0f, 0f, Color.rgb(55, 221, 216))
     }
     private val boxLine = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.RED
+        color = Color.rgb(24, 214, 208)
         style = Paint.Style.STROKE
         strokeWidth = 2f * density
     }
     private val tracerLine = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.RED
+        color = Color.rgb(185, 220, 221)
         style = Paint.Style.STROKE
         strokeWidth = 1.6f * density
     }
     private val labelBackground = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(185, 8, 8, 12)
+        color = Color.argb(205, 4, 13, 16)
         style = Paint.Style.FILL
     }
     private val labelText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.RED
+        color = Color.rgb(246, 251, 251)
         textSize = 12f * density
         typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
     }
     private val arrowFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.RED
+        color = Color.rgb(24, 214, 208)
         style = Paint.Style.FILL
     }
     private val labelPadding = 5f * density
