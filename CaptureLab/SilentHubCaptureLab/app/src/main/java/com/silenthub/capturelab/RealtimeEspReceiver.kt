@@ -17,7 +17,7 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.math.min
 
-/** Supabase Realtime protocol 1.0.0 receiver. Join acknowledgement is not app pairing. */
+/** Supabase Realtime protocol 2.0.0 receiver, including text arrays and binary user broadcasts. */
 internal class SupabaseRealtimeEspReceiver(
     private val pairingToken: String,
     private val onFrame: (ExternalEspFrame) -> Unit,
