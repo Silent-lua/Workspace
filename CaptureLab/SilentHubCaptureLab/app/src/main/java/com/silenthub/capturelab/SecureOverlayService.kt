@@ -216,9 +216,7 @@ class SecureOverlayService : Service() {
             }
             try {
                 windowManager?.updateViewLayout(view, params)
-            } catch (_: IllegalArgumentException) {
-                setConnectionState(ConnectionState.CONNECTION_FAILED, "secure_flag_update_failed")
-            } catch (_: WindowManager.BadTokenException) {
+            } catch (_: Exception) {
                 setConnectionState(ConnectionState.CONNECTION_FAILED, "secure_flag_update_failed")
             }
         }
