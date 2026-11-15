@@ -46,6 +46,8 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private lateinit var revealButton: TextView
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
+    private lateinit var flagSecureStatus: TextView
+    private lateinit var flagSecureButton: Button
     private lateinit var updateTitle: TextView
     private lateinit var updateSubtitle: TextView
     private lateinit var updateProgress: ProgressBar
@@ -145,12 +147,14 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             SecureOverlayService.KEY_AUTO_START,
             SecureOverlayService.KEY_USER_STOPPED,
             SecureOverlayService.KEY_PAUSED,
+            SecureOverlayService.KEY_FLAG_SECURE,
             SecureOverlayService.KEY_INSTALL_STATUS,
             SecureOverlayService.KEY_INSTALL_ERROR,
             SecureOverlayService.KEY_UPDATE_MANDATORY,
             InstallStatusReceiver.KEY_PENDING_CONFIRMATION -> runOnUiThread {
                 handlePendingInstallConfirmation()
                 refreshConnectionState()
+                refreshFlagSecureControls()
                 renderInstallStatus()
                 applyMandatoryGate()
             }
@@ -357,6 +361,20 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             "A persistent Android notification remains visible while the receiver is active. Stopping it disables automatic resume.",
             11f, muted, false
         ), topMargin(dp(11)))
+        receiverCard.addView(label(
+            "SCREEN CAPTURE PROTECTION  /  FLAG_SECURE", 10f, goldLight, true
+        ).apply { letterSpacing = 0.12f }, topMargin(dp(18)))
+        receiverCard.addView(label(
+            "Bloquea capturas y grabaciones cuando está activo. Desactívalo temporalmente para grabar el ESP junto con el resto de la pantalla.",
+            11f, muted, false
+        ), topMargin(dp(6)))
+        flagSecureStatus = label("", 12f, secondary, true)
+        receiverCard.addView(flagSecureStatus, topMargin(dp(9)))
+        flagSecureButton = actionButton("", false) {
+            val nextEnabled = !prefs.getBoolean(SecureOverlayService.KEY_FLAG_SECURE, true)
+            setFlagSecureEnabled(nextEnabled)
+        }
+        receiverCard.addView(flagSecureButton, topMargin(dp(8)))
         content.addView(receiverCard, topMargin(dp(10)))
 
         // Updates
@@ -412,7 +430,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         })
         note.addView(label("Event-driven rendering", 16f, primary, true), topMargin(dp(6)))
         note.addView(label(
-            "FLAG_SECURE stays enabled. The Canvas redraws on new frames and once on expiry, without an idle refresh loop.",
+            "FLAG_SECURE is enabled by default and can be changed from the receiver controls or its persistent notification. The Canvas redraws on new frames and once on expiry, without an idle refresh loop.",
             12f, secondary, false
         ), topMargin(dp(7)))
         val noteDivider = View(this).apply {
@@ -454,6 +472,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         scroll.requestApplyInsets()
         refreshPairingToken()
         refreshConnectionState()
+        refreshFlagSecureControls()
         renderInstallStatus()
         animateEntrance(content)
     }
@@ -718,6 +737,34 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         pairingRevealed = true
         refreshPairingToken()
         startButton.postDelayed({ startReceiver(userInitiated = false) }, 400L)
+    }
+
+    private fun setFlagSecureEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(SecureOverlayService.KEY_FLAG_SECURE, enabled).apply()
+        val serviceActive = prefs.getBoolean(SecureOverlayService.KEY_RUNNING, false) ||
+            prefs.getBoolean(SecureOverlayService.KEY_PAUSED, false)
+        if (serviceActive) {
+            try {
+                startService(Intent(this, SecureOverlayService::class.java).apply {
+                    action = SecureOverlayService.ACTION_SET_FLAG_SECURE
+                    putExtra(SecureOverlayService.EXTRA_FLAG_SECURE_ENABLED, enabled)
+                })
+            } catch (_: Exception) {
+                stateSubtitle.text = "No se pudo aplicar el cambio en la sesión activa. Se conservará para el próximo inicio."
+            }
+        }
+        refreshFlagSecureControls()
+    }
+
+    private fun refreshFlagSecureControls() {
+        if (!::flagSecureStatus.isInitialized || !::flagSecureButton.isInitialized) return
+        val enabled = prefs.getBoolean(SecureOverlayService.KEY_FLAG_SECURE, true)
+        flagSecureStatus.text = if (enabled) {
+            "Protección activa · FLAG_SECURE está habilitado."
+        } else {
+            "Protección desactivada · la grabación está permitida."
+        }
+        flagSecureButton.text = if (enabled) "Desactivar FLAG_SECURE" else "Activar FLAG_SECURE"
     }
 
     private fun startReceiver(userInitiated: Boolean) {
