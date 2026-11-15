@@ -8,6 +8,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import okio.ByteString
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.Closeable
@@ -28,6 +29,7 @@ internal class SupabaseRealtimeEspReceiver(
         private const val HEARTBEAT_MS = 20_000L
         private const val MAX_PLAYERS = 5
         private const val JOIN_REF = "1"
+        private const val PROTOCOL_VERSION = "2.0.0"
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -50,8 +52,8 @@ internal class SupabaseRealtimeEspReceiver(
         override fun run() {
             if (closed || socket == null) return
             val sent = socket?.send(
-                JSONObject().put("topic", "phoenix").put("event", "heartbeat")
-                    .put("payload", JSONObject()).put("ref", nextRef()).toString()
+                JSONArray().put(JSONObject.NULL).put(nextRef()).put("phoenix")
+                    .put("heartbeat").put(JSONObject()).toString()
             ) ?: false
             if (sent) handler.postDelayed(this, HEARTBEAT_MS) else scheduleReconnect()
         }
@@ -74,7 +76,7 @@ internal class SupabaseRealtimeEspReceiver(
         onStatus(if (hasConnectedBefore) "reconnecting" else "connecting")
 
         val key = URLEncoder.encode(PUBLISHABLE_KEY, "UTF-8")
-        val url = "wss://$PROJECT_REF.supabase.co/realtime/v1/websocket?apikey=$key&vsn=1.0.0"
+        val url = "wss://$PROJECT_REF.supabase.co/realtime/v1/websocket?apikey=$key&vsn=$PROTOCOL_VERSION"
         socket = client.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 if (closed) {
@@ -87,61 +89,25 @@ internal class SupabaseRealtimeEspReceiver(
                     .put("presence", JSONObject().put("enabled", false))
                     .put("postgres_changes", JSONArray())
                     .put("private", false)
-                val join = JSONObject()
-                    .put("topic", "realtime:$topic")
-                    .put("event", "phx_join")
-                    .put("payload", JSONObject().put("config", config))
-                    .put("ref", JOIN_REF)
-                    .put("join_ref", JOIN_REF)
+                // Supabase Realtime protocol 2.0.0 uses positional JSON arrays:
+                // [join_ref, ref, topic, event, payload].
+                val join = JSONArray()
+                    .put(JOIN_REF)
+                    .put(JOIN_REF)
+                    .put("realtime:$topic")
+                    .put("phx_join")
+                    .put(JSONObject().put("config", config))
                 if (!webSocket.send(join.toString())) scheduleReconnect()
                 handler.removeCallbacks(heartbeat)
                 handler.postDelayed(heartbeat, HEARTBEAT_MS)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                if (closed) return
-                try {
-                    val packet = JSONObject(text)
-                    val event = packet.optString("event")
-                    val packetTopic = packet.optString("topic")
-                    if (event == "phx_reply" &&
-                        packetTopic == "realtime:$topic" &&
-                        packet.optString("ref") == JOIN_REF) {
-                        val status = packet.optJSONObject("payload")?.optString("status")
-                        if (status == "ok") {
-                            joined = true
-                            hasConnectedBefore = true
-                            reconnectDelayMs = 1_000L
-                            onStatus("connected")
-                        } else {
-                            joined = false
-                            onStatus("channel_rejected")
-                            scheduleReconnect()
-                        }
-                        return
-                    }
-                    if (event == "phx_error" || event == "phx_close") {
-                        joined = false
-                        onStatus("reconnecting")
-                        scheduleReconnect()
-                        return
-                    }
-                    if (event == "broadcast" && packetTopic == "realtime:$topic" && joined) {
-                        val broadcast = packet.optJSONObject("payload") ?: return
-                        if (broadcast.optString("type") != "broadcast" ||
-                            broadcast.optString("event") != "frame") return
-                        val frameJson = broadcast.optJSONObject("payload") ?: return
-                        val sequence = frameJson.optLong("sequence", -1L)
-                        // Ignore duplicates and out-of-order frames; the publisher uses
-                        // a wall-clock sequence base so executor restarts remain monotonic.
-                        if (sequence < 0 || sequence <= lastSequence) return
-                        val frame = parseFrame(frameJson)
-                        lastSequence = sequence
-                        onFrame(frame)
-                    }
-                } catch (_: Exception) {
-                    // Malformed packets never change connection state.
-                }
+                if (!closed) handleTextPacket(text)
+            }
+
+            override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                if (!closed) handleBinaryPacket(bytes.toByteArray())
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -160,6 +126,116 @@ internal class SupabaseRealtimeEspReceiver(
                 }
             }
         })
+    }
+
+    private fun handleTextPacket(text: String) {
+        try {
+            val trimmed = text.trimStart()
+            if (trimmed.startsWith("[")) {
+                val packet = JSONArray(trimmed)
+                if (packet.length() < 5) return
+                val ref = packet.optString(1)
+                val packetTopic = packet.optString(2)
+                val event = packet.optString(3)
+                val payload = packet.optJSONObject(4) ?: JSONObject()
+                handleProtocolEvent(packetTopic, event, ref, payload)
+            } else {
+                // Keep compatibility with legacy protocol 1.0.0 text packets while
+                // the socket itself negotiates the current 2.0.0 protocol.
+                val packet = JSONObject(trimmed)
+                handleProtocolEvent(
+                    packet.optString("topic"),
+                    packet.optString("event"),
+                    packet.optString("ref"),
+                    packet.optJSONObject("payload") ?: JSONObject()
+                )
+            }
+        } catch (_: Exception) {
+            // Ignore malformed protocol frames without killing the socket.
+        }
+    }
+
+    private fun handleProtocolEvent(
+        packetTopic: String,
+        event: String,
+        ref: String,
+        payload: JSONObject
+    ) {
+        if (event == "phx_reply" &&
+            packetTopic == "realtime:$topic" &&
+            ref == JOIN_REF) {
+            val status = payload.optString("status")
+            if (status == "ok") {
+                joined = true
+                hasConnectedBefore = true
+                reconnectDelayMs = 1_000L
+                onStatus("connected")
+            } else {
+                joined = false
+                onStatus("channel_rejected")
+                scheduleReconnect()
+            }
+            return
+        }
+
+        if (event == "phx_error" || event == "phx_close") {
+            joined = false
+            onStatus("reconnecting")
+            scheduleReconnect()
+            return
+        }
+
+        if (event == "broadcast" && packetTopic == "realtime:$topic" && joined) {
+            handleBroadcast(payload.optString("event"), payload.optJSONObject("payload"))
+        }
+    }
+
+    private fun handleBroadcast(event: String, frameJson: JSONObject?) {
+        if (event != "frame" || !joined || frameJson == null) return
+        val sequence = frameJson.optLong("sequence", -1L)
+        // Ignore duplicates and out-of-order frames; the publisher uses a
+        // wall-clock sequence base so executor restarts remain monotonic.
+        if (sequence < 0 || sequence <= lastSequence) return
+        val frame = parseFrame(frameJson)
+        lastSequence = sequence
+        onFrame(frame)
+    }
+
+    /**
+     * Supabase Realtime 2.0.0 server broadcast binary layout:
+     * type(0x04), topicLen, eventLen, metadataLen, encoding, topic, event,
+     * metadata, payload. Encoding 1 means the user payload is UTF-8 JSON.
+     */
+    private fun handleBinaryPacket(bytes: ByteArray) {
+        try {
+            if (bytes.size < 5 || (bytes[0].toInt() and 0xff) != 0x04) return
+            val topicLength = bytes[1].toInt() and 0xff
+            val eventLength = bytes[2].toInt() and 0xff
+            val metadataLength = bytes[3].toInt() and 0xff
+            val payloadEncoding = bytes[4].toInt() and 0xff
+            if (payloadEncoding != 1) return
+
+            var offset = 5
+            fun takeString(length: Int): String {
+                require(length >= 0 && offset + length <= bytes.size)
+                val value = String(bytes, offset, length, Charsets.UTF_8)
+                offset += length
+                return value
+            }
+
+            val packetTopic = takeString(topicLength)
+            val event = takeString(eventLength)
+            require(offset + metadataLength <= bytes.size)
+            offset += metadataLength
+            if (offset > bytes.size) return
+            val payloadText = String(bytes, offset, bytes.size - offset, Charsets.UTF_8)
+            val payload = JSONObject(payloadText)
+            if (packetTopic == "realtime:$topic" && joined) {
+                handleBroadcast(event, payload)
+            }
+        } catch (_: Exception) {
+            // Invalid or unsupported binary broadcasts are discarded safely.
+        }
     }
 
     private fun parseFrame(json: JSONObject): ExternalEspFrame {
