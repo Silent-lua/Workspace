@@ -60,10 +60,10 @@ class SecureOverlayService : Service() {
                 return START_STICKY
             }
             ACTION_SET_FLAG_SECURE -> {
-                val enabled = intent.getBooleanExtra(
+                val enabled = intent?.getBooleanExtra(
                     EXTRA_FLAG_SECURE_ENABLED,
                     prefs.getBoolean(KEY_FLAG_SECURE, true)
-                )
+                ) ?: prefs.getBoolean(KEY_FLAG_SECURE, true)
                 applyFlagSecure(enabled)
                 return START_STICKY
             }
