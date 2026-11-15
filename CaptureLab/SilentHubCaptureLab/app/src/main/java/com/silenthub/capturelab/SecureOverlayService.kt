@@ -192,8 +192,7 @@ class SecureOverlayService : Service() {
         val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_SECURE
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -205,7 +204,7 @@ class SecureOverlayService : Service() {
             x = 0
             y = 0
             alpha = 0.75f
-            title = "SilentHub External Secure ESP"
+            title = "SilentHub External ESP"
         }
         return try {
             windowManager?.addView(view, params)
