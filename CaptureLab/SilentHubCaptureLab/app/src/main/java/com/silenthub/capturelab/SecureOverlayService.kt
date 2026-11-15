@@ -21,6 +21,7 @@ import android.view.WindowManager
 class SecureOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var overlayView: LiveEspOverlayView? = null
+    private var overlayLayoutParams: WindowManager.LayoutParams? = null
     private var realtimeReceiver: SupabaseRealtimeEspReceiver? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var lastFrameElapsed = 0L
@@ -53,6 +54,18 @@ class SecureOverlayService : Service() {
                     .apply()
                 stopSelf()
                 return START_NOT_STICKY
+            }
+            ACTION_TOGGLE_FLAG_SECURE -> {
+                applyFlagSecure(!prefs.getBoolean(KEY_FLAG_SECURE, true))
+                return START_STICKY
+            }
+            ACTION_SET_FLAG_SECURE -> {
+                val enabled = intent.getBooleanExtra(
+                    EXTRA_FLAG_SECURE_ENABLED,
+                    prefs.getBoolean(KEY_FLAG_SECURE, true)
+                )
+                applyFlagSecure(enabled)
+                return START_STICKY
             }
             ACTION_TOGGLE_PAUSE -> {
                 if (prefs.getBoolean(KEY_USER_STOPPED, false)) {
@@ -138,6 +151,7 @@ class SecureOverlayService : Service() {
             try { windowManager?.removeView(view) } catch (_: IllegalArgumentException) { }
         }
         overlayView = null
+        overlayLayoutParams = null
         lastFrameElapsed = 0L
 
         prefs.edit()
@@ -187,12 +201,43 @@ class SecureOverlayService : Service() {
             ?.notify(NOTIFICATION_ID, buildNotification())
     }
 
+    private fun applyFlagSecure(enabled: Boolean) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putBoolean(KEY_FLAG_SECURE, enabled)
+            .apply()
+
+        val view = overlayView
+        val params = overlayLayoutParams
+        if (view != null && params != null) {
+            params.flags = if (enabled) {
+                params.flags or WindowManager.LayoutParams.FLAG_SECURE
+            } else {
+                params.flags and WindowManager.LayoutParams.FLAG_SECURE.inv()
+            }
+            try {
+                windowManager?.updateViewLayout(view, params)
+            } catch (_: IllegalArgumentException) {
+                setConnectionState(ConnectionState.CONNECTION_FAILED, "secure_flag_update_failed")
+            } catch (_: WindowManager.BadTokenException) {
+                setConnectionState(ConnectionState.CONNECTION_FAILED, "secure_flag_update_failed")
+            }
+        }
+        updateForegroundNotification()
+    }
+
     private fun showSecureOverlay(): Boolean {
         val view = LiveEspOverlayView(this)
-        val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+        val secureCaptureEnabled = getSharedPreferences(PREFS, MODE_PRIVATE)
+            .getBoolean(KEY_FLAG_SECURE, true)
+        val baseFlags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        val flags = baseFlags or (if (secureCaptureEnabled) {
+            WindowManager.LayoutParams.FLAG_SECURE
+        } else {
+            0
+        })
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -209,6 +254,7 @@ class SecureOverlayService : Service() {
         return try {
             windowManager?.addView(view, params)
             overlayView = view
+            overlayLayoutParams = params
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RUNNING, true).apply()
             true
         } catch (_: SecurityException) {
@@ -299,6 +345,13 @@ class SecureOverlayService : Service() {
         )
         val toggleLabel = if (paused) "Reanudar" else "Pausar"
         val toggleIcon = if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
+        val secureEnabled = prefs.getBoolean(KEY_FLAG_SECURE, true)
+        val securePending = PendingIntent.getService(
+            this, 13,
+            Intent(this, SecureOverlayService::class.java).apply { action = ACTION_TOGGLE_FLAG_SECURE },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val secureLabel = if (secureEnabled) "Permitir grabación" else "Bloquear capturas"
         val stopIntent = Intent(this, SecureOverlayService::class.java).apply { action = ACTION_STOP }
         val stopPending = PendingIntent.getService(
             this, 11, stopIntent,
@@ -312,13 +365,17 @@ class SecureOverlayService : Service() {
         }
         return builder
             .setContentTitle("SilentHub External ESP")
-            .setContentText(if (paused) "Sesión pausada · reanuda cuando estés listo."
-                else "Vercel relay · Supabase Realtime")
+            .setContentText(when {
+                paused -> "Sesión pausada · reanuda cuando estés listo."
+                secureEnabled -> "FLAG_SECURE activo · capturas bloqueadas"
+                else -> "FLAG_SECURE desactivado · grabación permitida"
+            })
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setContentIntent(openPending)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .addAction(toggleIcon, toggleLabel, togglePending)
+            .addAction(android.R.drawable.ic_menu_camera, secureLabel, securePending)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Detener", stopPending)
             .build()
     }
@@ -340,6 +397,7 @@ class SecureOverlayService : Service() {
             try { windowManager?.removeView(view) } catch (_: IllegalArgumentException) { }
         }
         overlayView = null
+        overlayLayoutParams = null
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putBoolean(KEY_RUNNING, false)
             .putBoolean(KEY_BRIDGE, false)
@@ -363,6 +421,7 @@ class SecureOverlayService : Service() {
         const val KEY_CONNECTION_STATE = "connection_state"
         const val KEY_LAST_FRAME = "last_frame_at"
         const val KEY_LAST_PLAYER_COUNT = "last_player_count"
+        const val KEY_FLAG_SECURE = "flag_secure_enabled"
         const val KEY_UPDATE_MANDATORY = "mandatory_update_pending"
         const val KEY_PENDING_UPDATE_VERSION = "pending_update_version"
         const val KEY_PENDING_UPDATE_FILE = "pending_update_file"
@@ -374,6 +433,9 @@ class SecureOverlayService : Service() {
         private const val ACTION_PAUSE = "com.silenthub.capturelab.PAUSE_EXTERNAL_ESP"
         private const val ACTION_RESUME = "com.silenthub.capturelab.RESUME_EXTERNAL_ESP"
         private const val ACTION_TOGGLE_PAUSE = "com.silenthub.capturelab.TOGGLE_PAUSE_EXTERNAL_ESP"
+        private const val ACTION_TOGGLE_FLAG_SECURE = "com.silenthub.capturelab.TOGGLE_FLAG_SECURE"
+        const val ACTION_SET_FLAG_SECURE = "com.silenthub.capturelab.SET_FLAG_SECURE"
+        const val EXTRA_FLAG_SECURE_ENABLED = "flag_secure_enabled_extra"
         private const val FRAME_STALE_MS = 2_500L
         private const val FRAME_HEALTH_PERSIST_MS = 5_000L
     }
