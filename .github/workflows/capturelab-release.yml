@@ -109,7 +109,7 @@ jobs:
             "versionCode": $VERSION_CODE,
             "mandatory": true,
             "minimumSupportedVersionCode": $VERSION_CODE,
-            "changelog": "Supabase Realtime v2 frame decoding, screen-recordable ESP overlay, and obsidian black, turquoise and silver visual system."
+            "changelog": "Supabase Realtime v2 frame decoding, configurable FLAG_SECURE capture protection, and obsidian black, turquoise and silver visual system."
           }
           JSON
       - name: Publish GitHub Release
